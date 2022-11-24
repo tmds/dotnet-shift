@@ -10,7 +10,7 @@ oc get --raw /openapi/v2 >openshift-api.json
 We generate `CLIENT_CS` using `SWAGGER_JSON`.
 ```
 SWAGGER_JSON=$(realpath openshift-api.json)
-CLIENT_CS=$(realpath ./OpenShiftClient.cs)
+CLIENT_CS=$(realpath ./OpenShiftApiClient.cs)
 ```
 
 The OpenShift spec has duplicate paarameter names, and NSWag has an issue with these: https://github.com/RicoSuter/NSwag/issues/3442.
