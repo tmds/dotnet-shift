@@ -15,6 +15,19 @@ partial class OpenShiftClient
         return deployments;
     }
 
+    public async Task<User> GetUserAsync()
+    {
+        var user = await _apiClient.ReadUserAsync("~");
+        return Map(user);
+    }
+
+    public async Task<List<Project>> ListProjectsAsync()
+    {
+        var projectList = await _apiClient.ListProjectOpenshiftIoV1ProjectAsync();
+        var projects = projectList.Items.Select(Map);
+        return projects.ToList();
+    }
+
     private static List<Deployment> Map(List<OpenShift.Deployment> deployments)
         => deployments.Select(d => Map(d)).ToList();
 
@@ -23,6 +36,18 @@ partial class OpenShiftClient
         {
             Name = deployment.Metadata.Name,
             Labels = new(deployment.Metadata.Labels)
+        };
+
+    private static User Map(OpenShift.User user)
+        => new User
+        {
+            Name = user.Metadata.Name
+        };
+
+    private static Project Map(OpenShift.Project project)
+        => new Project
+        {
+            Name = project.Metadata.Name
         };
 
     // This filters against 'app.openshift.io/runtime', so it will miss .NET deployments
