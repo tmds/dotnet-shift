@@ -1,8 +1,10 @@
-class DeploymentsCommand : System.CommandLine.Command
+using System.CommandLine;
+
+sealed class DeploymentsCommand : Command
 {
     public DeploymentsCommand() : base("deployments")
     {
-        System.CommandLine.Handler.SetHandler(this, () => HandleAsync());
+        this.SetHandler(() => HandleAsync());
     }
 
     public static async Task HandleAsync()

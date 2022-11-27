@@ -4,22 +4,25 @@ partial class OpenShiftClient
 {
     public string Namespace { get; }
 
+    public OpenShiftClient(string baseUrl, string token)
+    {
+        Namespace = "";
+        _apiClient = CreateApiClient(baseUrl, token);
+    }
+
     public OpenShiftClient()
     {
         var config = k8s.KubernetesClientConfiguration.BuildDefaultConfig();
 
         Namespace = config.Namespace;
  
-        _apiClient = CreateApiClient(config);
+        _apiClient = CreateApiClient(config.Host, config.AccessToken);
     }
 
-    private OpenShift.OpenShiftApiClient CreateApiClient(k8s.KubernetesClientConfiguration config)
+    private OpenShift.OpenShiftApiClient CreateApiClient(string baseUrl, string token)
     {
-        string baseUrl = config.Host;
-        string token = config.AccessToken;
-
         var httpClient = new HttpClient();
-        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken);
-        return new OpenShift.OpenShiftApiClient(config.Host, httpClient);
+        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return new OpenShift.OpenShiftApiClient(baseUrl, httpClient);
     }
 }
