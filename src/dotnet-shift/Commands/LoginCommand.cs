@@ -98,6 +98,10 @@ sealed class LoginCommand : Command
 
     private static void CreateConfigfile(string configFilePath, Cluster cluster, Context context, k8s.KubeConfigModels.User user)
     {
+        // Ensure directory exists.
+        string directory = Path.GetDirectoryName(configFilePath)!;
+        Directory.CreateDirectory(directory);
+
         K8SConfiguration config = new()
         {
             ApiVersion = "v1",
@@ -107,7 +111,6 @@ sealed class LoginCommand : Command
             Users = new[] { user },
             Clusters = new[] { cluster }
         };
-
         WriteConfigFile(configFilePath, config);
     }
 
