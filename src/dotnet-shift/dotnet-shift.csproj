@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackAsTool>true</PackAsTool>
-    <ToolCommandName>dotnet-build-image</ToolCommandName>
+    <ToolCommandName>dotnet-shift</ToolCommandName>
     <Authors>Tom Deseyn</Authors>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Copyright>Tom Deseyn</Copyright>
