@@ -22,7 +22,7 @@ To log into the OpenShift cluster copy the `oc login` command from the OpenShift
 
 
 ```
-dotnet shift login --token=xyz --server=https://abc.openshiftapps.com:6443
+$ dotnet shift login --token=xyz --server=https://abc.openshiftapps.com:6443
 ```
 
 Deploy the application to the cluster:
