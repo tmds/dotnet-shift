@@ -1,12 +1,37 @@
 using System.CommandLine;
 using System.Formats.Tar;
 using System.IO.Pipelines;
+using System.Diagnostics.CodeAnalysis;
 
 sealed class DeployCommand : Command
 {
     private const string DotnetShift = "dotnet-shift";
     private const string Runtime = "dotnet";
     private const string ContainerName = "app";
+
+    record ResourceProperties
+    {
+        [SetsRequiredMembers]
+        public ResourceProperties(string name, string ns, string s2iImage)
+        {
+            AppName = Instance = DotnetAppName = DotnetComponent = name;
+            Namespace = ns;
+            DotnetS2iImage = s2iImage;
+        }
+        public required string AppName { get; init; }
+        public required string Instance { get; init; }
+
+        public required string DotnetAppName { get; init; }
+        public required string DotnetS2iImage { get; init; }
+        public required string DotnetComponent { get; init; }
+
+        public required string Namespace { get; init; }
+
+        public string DotnetAppImageName => DotnetAppName;
+        public string DotnetBinaryBuildConfigName => DotnetAppName; // $"{DotnetAppName}-binary";
+        public string ManagedBy => "dotnet-shift";
+        public string DotnetRuntime => "dotnet";
+    }
 
     public static readonly Argument<string> ProjectArgument =
         new Argument<string>("PROJECT", defaultValueFactory: () => ".", ".NET project to build");
@@ -70,34 +95,34 @@ sealed class DeployCommand : Command
         string s2iImage = GetS2iImage(projectInformation.DotnetVersion);
 
         var client = new OpenShiftClient();
-
         string ns = client.Namespace;
 
+        var props = new ResourceProperties(name, ns ,s2iImage);
+
         Console.WriteLine("Update DeploymentConfig");
-        string deploymentConfig = GenerateDeploymentConfig(ns, name);
+        string deploymentConfig = GenerateDeploymentConfig(props);
         await client.ApplyDeploymentConfigAsync(deploymentConfig);
 
         Console.WriteLine("Update Service");
-        string service = GenerateService(ns, name);
+        string service = GenerateService(props);
         await client.ApplyServiceAsync(service);
 
         Console.WriteLine("Update ImageStream");
-        string imageStream = GenerateImageStream(ns, name);
+        string imageStream = GenerateImageStream(props);
         await client.ApplyImageStreamAsync(imageStream);
 
         Console.WriteLine("Update BuildConfig");
-        string buildConfig = GenerateBinaryBuildConfig(ns, name, s2iImage);
+        string buildConfig = GenerateBinaryBuildConfig(props);
         await client.ApplyBuildConfigAsync(buildConfig);
 
         // TODO: add --expose option.
         Console.WriteLine("Update Route");
-        string route = GenerateRoute(ns, name);
+        string route = GenerateRoute(props);
         await client.ApplyRouteAsync(route);
 
-        Console.WriteLine("Start build.");
-        string binaryBuildConfigName = BinaryBuildConfigName(name);
+        Console.WriteLine("Start build");
         using Stream archiveStream = CreateApplicationArchive(contextDir);
-        await client.StartBinaryBuildAsync(binaryBuildConfigName, archiveStream);
+        await client.StartBinaryBuildAsync(props.DotnetBinaryBuildConfigName, archiveStream);
 
         // TODO: follow build.
         // TODO: print url.
@@ -168,28 +193,22 @@ sealed class DeployCommand : Command
         }
     }
 
-    private static string GenerateDeploymentConfig(string ns, string name)
+    private static string GenerateDeploymentConfig(ResourceProperties properties)
     {
         return $$"""
         {
             "apiVersion": "apps.openshift.io/v1",
             "kind": "DeploymentConfig",
             "metadata": {
-                "name": "{{name}}",
+                "name": "{{properties.DotnetAppName}}",
                 "labels": {
-                    "app.kubernetes.io/managed-by": "{{DotnetShift}}",
-
-                    "app.kubernetes.io/name": "{{name}}",
-                    "app.kubernetes.io/component": "{{name}}",
-                    "app.kubernetes.io/instance": "{{name}}",
-
-                    "app.openshift.io/runtime": "{{Runtime}}"
+                    {{DotnetResourceLabels(properties, includeRuntimeLabels: true)}}
                 }
             },
             "spec": {
                 "replicas": 1,
                 "selector": {
-                    "app.kubernetes.io/name": "{{name}}"
+                    {{DotnetContainerLabels(properties, isSelector: true)}}
                 },
                 "triggers": [
                     {
@@ -204,8 +223,8 @@ sealed class DeployCommand : Command
                             ],
                             "from": {
                                 "kind": "ImageStreamTag",
-                                "namespace": "{{ns}}",
-                                "name": "{{name}}:latest"
+                                "namespace": "{{properties.Namespace}}",
+                                "name": "{{properties.DotnetAppImageName}}:latest"
                             }
                         }
                     }
@@ -213,15 +232,14 @@ sealed class DeployCommand : Command
                 "template": {
                     "metadata": {
                         "labels": {
-                            "app.kubernetes.io/name": "{{name}}",
-                            "app.kubernetes.io/managed-by": "{{DotnetShift}}"
+                            {{DotnetContainerLabels(properties, isSelector: false)}}
                         }
                     },
                     "spec": {
                         "containers": [
                             {
                                 "name": "{{ContainerName}}",
-                                "image": "{{name}}",
+                                "image": "{{properties.DotnetAppImageName}}",
                                 "securityContext": {
                                     "privileged": false
                                 },
@@ -242,7 +260,7 @@ sealed class DeployCommand : Command
         """;
     }
 
-    private static string GenerateService(string ns, string name)
+    private static string GenerateService(ResourceProperties properties)
     {
         return $$"""
         {
@@ -251,7 +269,7 @@ sealed class DeployCommand : Command
             "spec": {
                 "type": "ClusterIP",
                 "selector": {
-                    "app.kubernetes.io/name": "{{name}}"
+                    {{DotnetContainerLabels(properties, isSelector: true)}}
                 },
                 "ports": [
                 {
@@ -262,19 +280,16 @@ sealed class DeployCommand : Command
                 ]
             },
             "metadata": {
-                "name": "{{name}}",
+                "name": "{{properties.DotnetAppName}}",
                 "labels": {
-                    "app.kubernetes.io/managed-by": "{{DotnetShift}}",
-                    "app.kubernetes.io/name": "{{name}}",
-                    "app.kubernetes.io/component": "{{name}}",
-                    "app.kubernetes.io/instance": "{{name}}"
+                    {{DotnetResourceLabels(properties, includeRuntimeLabels: false)}}
                 }
             }
         }
         """;
     }
 
-    private static string GenerateImageStream(string ns, string name)
+    private static string GenerateImageStream(ResourceProperties properties)
     {
         return $$"""
         {
@@ -282,20 +297,15 @@ sealed class DeployCommand : Command
             "kind": "ImageStream",
             "metadata": {
                 "labels": {
-                    "app.kubernetes.io/managed-by": "{{DotnetShift}}",
-                    "app.kubernetes.io/name": "{{name}}",
-                    "app.kubernetes.io/component": "{{name}}",
-                    "app.kubernetes.io/instance": "{{name}}"
+                    {{DotnetResourceLabels(properties, includeRuntimeLabels: false)}}
                 },
-                "name": "{{name}}"
+                "name": "{{properties.DotnetAppName}}"
             }
         }
         """;
     }
 
-    private static string BinaryBuildConfigName(string name) => $"{name}-binary";
-
-    private static string GenerateBinaryBuildConfig(string ns, string name, string s2iImage)
+    private static string GenerateBinaryBuildConfig(ResourceProperties properties)
     {
         return $$"""
         {
@@ -303,15 +313,10 @@ sealed class DeployCommand : Command
             "kind": "BuildConfig",
             "metadata": {
                 "labels": {
-                    "app.kubernetes.io/managed-by": "{{DotnetShift}}",
 
-                    "app.kubernetes.io/name": "{{name}}",
-                    "app.kubernetes.io/component": "{{name}}",
-                    "app.kubernetes.io/instance": "{{name}}",
-
-                    "app.openshift.io/runtime": "{{Runtime}}"
+                    {{DotnetResourceLabels(properties, includeRuntimeLabels: true)}}
                 },
-                "name": "{{BinaryBuildConfigName(name)}}"
+                "name": "{{properties.DotnetBinaryBuildConfigName}}"
             },
             "spec": {
                 "failedBuildsHistoryLimit": 5,
@@ -319,7 +324,7 @@ sealed class DeployCommand : Command
                 "output": {
                     "to": {
                         "kind": "ImageStreamTag",
-                        "name": "{{name}}:latest"
+                        "name": "{{properties.DotnetAppImageName}}:latest"
                     }
                 },
                 "source": {
@@ -329,7 +334,7 @@ sealed class DeployCommand : Command
                     "sourceStrategy": {
                         "from": {
                             "kind": "DockerImage",
-                            "name": "{{s2iImage}}"
+                            "name": "{{properties.DotnetS2iImage}}"
                         }
                     },
                     "type": "Source"
@@ -339,7 +344,7 @@ sealed class DeployCommand : Command
         """;
     }
 
-    private static string GenerateRoute(string ns, string name)
+    private static string GenerateRoute(ResourceProperties properties)
     {
         return $$"""
         {
@@ -348,23 +353,51 @@ sealed class DeployCommand : Command
             "spec": {
                 "to": {
                     "kind": "Service",
-                    "name": "{{name}}"
+                    "name": "{{properties.DotnetAppName}}"
                 },
                 "port": {
                     "targetPort": 8080
                 }
             },
             "metadata": {
-                "name": "{{name}}",
+                "name": "{{properties.DotnetAppName}}",
                 "labels": {
-                    "app.kubernetes.io/managed-by": "{{DotnetShift}}",
-
-                    "app.kubernetes.io/name": "{{name}}",
-                    "app.kubernetes.io/component": "{{name}}",
-                    "app.kubernetes.io/instance": "{{name}}"
+                    {{DotnetResourceLabels(properties, includeRuntimeLabels: false)}}
                 }
             }
         }
         """;
+    }
+
+    private static string DotnetResourceLabels(ResourceProperties properties, bool includeRuntimeLabels)
+    {
+        string labels = $$"""
+                      "app.kubernetes.io/managed-by": "{{properties.ManagedBy}}"
+                    , "app.kubernetes.io/part-of": "{{properties.AppName}}"
+                    , "app.kubernetes.io/name": "{{properties.DotnetAppName}}"
+                    , "app.kubernetes.io/component": "{{properties.DotnetComponent}}"
+                    , "app.kubernetes.io/instance": "{{properties.Instance}}"
+        """;
+
+        if (includeRuntimeLabels)
+        {
+            labels += $$"""
+                    , "app.openshift.io/runtime": "{{properties.DotnetRuntime}}"
+        """;
+        }
+
+        return labels;
+    }
+
+    private static string DotnetContainerLabels(ResourceProperties properties, bool isSelector)
+    {
+        string labels = $$"""
+                    "app": "{{properties.DotnetAppName}}"
+        """;
+        if (!isSelector)
+        {
+
+        }
+        return labels;
     }
 }
