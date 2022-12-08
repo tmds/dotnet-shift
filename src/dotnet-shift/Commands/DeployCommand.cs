@@ -1,7 +1,10 @@
 using System.CommandLine;
 using System.Formats.Tar;
+using System.IO;
 using System.IO.Pipelines;
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
+using System.Text.Json;
 
 sealed class DeployCommand : Command
 {
@@ -12,10 +15,9 @@ sealed class DeployCommand : Command
     record ResourceProperties
     {
         [SetsRequiredMembers]
-        public ResourceProperties(string name, string ns, string s2iImage)
+        public ResourceProperties(string name, string s2iImage)
         {
             AppName = Instance = DotnetAppName = DotnetComponent = name;
-            Namespace = ns;
             DotnetS2iImage = s2iImage;
         }
         public required string AppName { get; init; }
@@ -25,10 +27,8 @@ sealed class DeployCommand : Command
         public required string DotnetS2iImage { get; init; }
         public required string DotnetComponent { get; init; }
 
-        public required string Namespace { get; init; }
-
         public string DotnetAppImageName => DotnetAppName;
-        public string DotnetBinaryBuildConfigName => DotnetAppName; // $"{DotnetAppName}-binary";
+        public string DotnetBinaryBuildConfigName => $"{DotnetAppName}-binary";
         public string ManagedBy => "dotnet-shift";
         public string DotnetRuntime => "dotnet";
     }
@@ -36,14 +36,18 @@ sealed class DeployCommand : Command
     public static readonly Argument<string> ProjectArgument =
         new Argument<string>("PROJECT", defaultValueFactory: () => ".", ".NET project to build");
 
+    public static readonly Option<string> AsFileOption =
+        new Option<string>( "--as-file", "Generates a JSON file with resources.");
+
     public DeployCommand() : base("deploy")
     {
         Add(ProjectArgument);
+        Add(AsFileOption);
 
-        this.SetHandler((project) => HandleAsync(project), ProjectArgument);
+        this.SetHandler((project, asFile) => HandleAsync(project, asFile), ProjectArgument, AsFileOption);
     }
 
-    public static async Task<int> HandleAsync(string project)
+    public static async Task<int> HandleAsync(string project, string? asFile)
     {
         // Find the .NET project file.
         string projectFullPath = Path.Combine(Directory.GetCurrentDirectory(), project);
@@ -94,40 +98,105 @@ sealed class DeployCommand : Command
         string name = projectInformation.AssemblyName.Replace(".", "-");
         string s2iImage = GetS2iImage(projectInformation.DotnetVersion);
 
-        var client = new OpenShiftClient();
-        string ns = client.Namespace;
+        var props = new ResourceProperties(name ,s2iImage);
 
-        var props = new ResourceProperties(name, ns ,s2iImage);
-
-        Console.WriteLine("Update DeploymentConfig");
         string deploymentConfig = GenerateDeploymentConfig(props);
-        await client.ApplyDeploymentConfigAsync(deploymentConfig);
-
-        Console.WriteLine("Update Service");
         string service = GenerateService(props);
-        await client.ApplyServiceAsync(service);
-
-        Console.WriteLine("Update ImageStream");
         string imageStream = GenerateImageStream(props);
-        await client.ApplyImageStreamAsync(imageStream);
-
-        Console.WriteLine("Update BuildConfig");
         string buildConfig = GenerateBinaryBuildConfig(props);
-        await client.ApplyBuildConfigAsync(buildConfig);
-
         // TODO: add --expose option.
-        Console.WriteLine("Update Route");
         string route = GenerateRoute(props);
-        await client.ApplyRouteAsync(route);
 
-        Console.WriteLine("Start build");
-        using Stream archiveStream = CreateApplicationArchive(contextDir);
-        await client.StartBinaryBuildAsync(props.DotnetBinaryBuildConfigName, archiveStream);
+        if (asFile is null)
+        {
+            var client = new OpenShiftClient();
 
-        // TODO: follow build.
-        // TODO: print url.
+            Console.WriteLine("Update DeploymentConfig");
+            await client.ApplyDeploymentConfigAsync(deploymentConfig);
 
+            Console.WriteLine("Update Service");
+            await client.ApplyServiceAsync(service);
+
+            Console.WriteLine("Update ImageStream");
+            await client.ApplyImageStreamAsync(imageStream);
+
+            Console.WriteLine("Update BuildConfig");
+            await client.ApplyBuildConfigAsync(buildConfig);
+
+            Console.WriteLine("Update Route");
+            await client.ApplyRouteAsync(route);
+
+            Console.WriteLine("Start build");
+            using Stream archiveStream = CreateApplicationArchive(contextDir);
+            await client.StartBinaryBuildAsync(props.DotnetBinaryBuildConfigName, archiveStream);
+
+            // TODO: follow build.
+            // TODO: print url.
+        }
+        else
+        {
+            StringBuilder content = new();
+            content.Append("""
+                           {
+                               "apiVersion": "v1",
+                               "kind": "List",
+                               "items": [
+                           """);
+            content.Append(deploymentConfig);
+
+            content.Append(",");
+            content.Append(service);
+
+            content.Append(",");
+            content.Append(imageStream);
+
+            content.Append(",");
+            content.Append(buildConfig);
+
+            content.Append(",");
+            content.Append(route);
+
+            content.Append("""
+                               ]
+                           }
+                           """);
+            string json = JsonTryToPrettify(content.ToString());
+            File.WriteAllText(asFile, json);
+        }
         return 0;
+    }
+
+    private static string JsonTryToPrettify(string json)
+    {
+        try
+        {
+            var doc = JsonDocument.Parse(
+                json,
+                new JsonDocumentOptions
+                {
+                    AllowTrailingCommas = true
+                }
+            );
+            MemoryStream memoryStream = new MemoryStream();
+            using (
+                var utf8JsonWriter = new Utf8JsonWriter(
+                    memoryStream,
+                    new JsonWriterOptions
+                    {
+                        Indented = true
+                    }
+                )
+            )
+            {
+                doc.WriteTo(utf8JsonWriter);
+            }
+            return Encoding.UTF8.GetString(memoryStream.ToArray());
+        }
+        catch
+        {
+            // JSON invalid?
+            return json;
+        }
     }
 
     private static string GetS2iImage(string version)
@@ -223,7 +292,6 @@ sealed class DeployCommand : Command
                             ],
                             "from": {
                                 "kind": "ImageStreamTag",
-                                "namespace": "{{properties.Namespace}}",
                                 "name": "{{properties.DotnetAppImageName}}:latest"
                             }
                         }
