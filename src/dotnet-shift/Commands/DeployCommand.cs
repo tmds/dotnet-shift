@@ -43,7 +43,7 @@ sealed class DeployCommand : Command
     public static readonly Option<string> AsFileOption =
         new Option<string>( "--as-file", "Generates a JSON file with resources.");
 
-    public DeployCommand() : base("deploy")
+    public DeployCommand() : base("deploy", "Deploys .NET application")
     {
         Add(ProjectArgument);
         Add(AsFileOption);

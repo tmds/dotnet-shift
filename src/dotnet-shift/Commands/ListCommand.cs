@@ -1,8 +1,8 @@
 using System.CommandLine;
 
-sealed class DeploymentsCommand : Command
+sealed class ListCommand : Command
 {
-    public DeploymentsCommand() : base("deployments")
+    public ListCommand() : base("list", "Lists deployed .NET applications.")
     {
         this.SetHandler(() => HandleAsync());
     }
@@ -13,9 +13,11 @@ sealed class DeploymentsCommand : Command
 
         var deployments = await client.ListDeploymentsAsync();
 
+        Console.WriteLine("NAME");
+
         foreach (var deployment in deployments)
         {
-            Console.WriteLine(deployment.Name);
+            Console.WriteLine(deployment.Labels[ResourceLabels.PartOf]);
         }
     }
 }
