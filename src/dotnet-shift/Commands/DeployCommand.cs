@@ -134,6 +134,8 @@ sealed class DeployCommand : Command
             using Stream archiveStream = CreateApplicationArchive(contextDir);
             await client.StartBinaryBuildAsync(props.DotnetBinaryBuildConfigName, archiveStream);
 
+            // ** Any resource types added here must be added to the 'delete' command too. ** //
+
             // TODO: follow build.
             // TODO: print url.
         }
