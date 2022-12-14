@@ -7,5 +7,6 @@ sealed class DotnetShiftCommand : RootCommand
         AddCommand(new LoginCommand());
         AddCommand(new DeployCommand());
         AddCommand(new ListCommand());
+        AddCommand(new DeleteCommand());
     }
 }

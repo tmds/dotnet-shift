@@ -8,11 +8,75 @@ partial class OpenShiftClient
 
     private readonly OpenShift.OpenShiftApiClient _apiClient;
 
-    public async Task<List<Deployment>> ListDeploymentsAsync()
+    public async Task<List<Deployment>> ListDotnetApplicationsAsync()
     {
-        var deploymentsList = await _apiClient.ListAppsOpenshiftIoV1NamespacedDeploymentConfigAsync(Namespace, labelSelector: $"{ResourceLabels.Runtime}=dotnet,{ResourceLabels.PartOf}");
+        string selector = $"{ResourceLabels.Runtime}=dotnet,{ResourceLabels.PartOf}";
+        var deploymentsList = await _apiClient.ListAppsOpenshiftIoV1NamespacedDeploymentConfigAsync(Namespace, labelSelector: selector);
         var deployments = Map(deploymentsList.Items);
         return deployments;
+    }
+
+    public async Task DeleteApplicationAsync(string name)
+    {
+        string selector = $"{ResourceLabels.PartOf}={name}";
+        Task[] tasks = new[]
+        {
+            DeleteServicesAsync(selector),
+            DeleteImageStreamsAsync(selector),
+            DeleteBuildConfigsAsync(selector),
+            DeleteRoutesAsync(selector)
+        };
+
+        await Task.WhenAll(tasks);
+
+        // Delete DeploymentConfigs last since we use them to detect the applications
+        // in ListDotnetApplicationsAsync.
+        await DeleteDeploymentConfigsAsync(selector);
+
+        async Task DeleteDeploymentConfigsAsync(string selector)
+        {
+            var list = await _apiClient.ListAppsOpenshiftIoV1NamespacedDeploymentConfigAsync(Namespace, labelSelector: selector);
+            foreach (var item in list.Items)
+            {
+                await _apiClient.DeleteAppsOpenshiftIoV1NamespacedDeploymentConfigAsync(item.Metadata.Name, Namespace);
+            }
+        }
+
+        async Task DeleteServicesAsync(string selector)
+        {
+            var list = await _apiClient.ListCoreV1NamespacedServiceAsync(Namespace, labelSelector: selector);
+            foreach (var item in list.Items)
+            {
+                await _apiClient.DeleteCoreV1NamespacedServiceAsync(item.Metadata.Name, Namespace);
+            }
+        }
+
+        async Task DeleteImageStreamsAsync(string selector)
+        {
+            var list = await _apiClient.ListImageOpenshiftIoV1NamespacedImageStreamAsync(Namespace, labelSelector: selector);
+            foreach (var item in list.Items)
+            {
+                await _apiClient.DeleteImageOpenshiftIoV1NamespacedImageStreamAsync(item.Metadata.Name, Namespace);
+            }
+        }
+
+        async Task DeleteBuildConfigsAsync(string selector)
+        {
+            var list = await _apiClient.ListBuildOpenshiftIoV1NamespacedBuildConfigAsync(Namespace, labelSelector: selector);
+            foreach (var item in list.Items)
+            {
+                await _apiClient.DeleteBuildOpenshiftIoV1NamespacedBuildConfigAsync(item.Metadata.Name, Namespace);
+            }
+        }
+
+        async Task DeleteRoutesAsync(string selector)
+        {
+            var list = await _apiClient.ListRouteOpenshiftIoV1NamespacedRouteAsync(Namespace, labelSelector: selector);
+            foreach (var item in list.Items)
+            {
+                await _apiClient.DeleteRouteOpenshiftIoV1NamespacedRouteAsync(item.Metadata.Name, Namespace);
+            }
+        }
     }
 
     public async Task<User> GetUserAsync()

@@ -2,7 +2,7 @@ using System.CommandLine;
 
 sealed class ListCommand : Command
 {
-    public ListCommand() : base("list", "Lists deployed .NET applications.")
+    public ListCommand() : base("list", "Lists deployed .NET applications")
     {
         this.SetHandler(() => HandleAsync());
     }
@@ -11,7 +11,7 @@ sealed class ListCommand : Command
     {
         var client = new OpenShiftClient();
 
-        var deployments = await client.ListDeploymentsAsync();
+        var deployments = await client.ListDotnetApplicationsAsync();
 
         Console.WriteLine("NAME");
 
