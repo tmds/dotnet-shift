@@ -121,10 +121,22 @@ sealed class LoginCommand : Command
             Access = FileAccess.Write,
             Mode = FileMode.Create, // Create new or truncate existing.
         };
+
+        // Make the config file rw for the user only.
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
+#if NET6_0
+            if (!File.Exists(configFilePath))
+            {
+                // temp files have user-only access.
+                string userFile = Path.GetTempFileName();
+                File.Move(userFile, configFilePath);
+            }
+#else
             fso.UnixCreateMode = UnixFileMode.UserWrite | UnixFileMode.UserRead;
+#endif
         }
+
         using var fs = new FileStream(configFilePath, fso);
         fs.Write(Encoding.UTF8.GetBytes(KubernetesYaml.Serialize(config)));
     }
