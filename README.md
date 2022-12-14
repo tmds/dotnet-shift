@@ -4,7 +4,7 @@ An opioninated .NET cli tool for deploying .NET apps to OpenShift.
 
 # Usage
 
-Install .NET 7 using the instructions at https://learn.microsoft.com/en-us/dotnet/core/install/.
+Install .NET 6 or .NET 7 using the instructions at https://learn.microsoft.com/en-us/dotnet/core/install/.
 
 Install the tool:
 

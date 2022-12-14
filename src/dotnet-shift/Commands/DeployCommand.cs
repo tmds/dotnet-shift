@@ -1,10 +1,14 @@
 using System.CommandLine;
-using System.Formats.Tar;
 using System.IO;
 using System.IO.Pipelines;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
+#if NET6_0
+using System.IO.Compression;
+#else
+using System.Formats.Tar;
+#endif
 
 sealed class DeployCommand : Command
 {
@@ -211,6 +215,37 @@ sealed class DeployCommand : Command
         };
     }
 
+#if NET6_0
+    private static Stream CreateApplicationArchive(string directory)
+    {
+        // ZipFile doesn't support creating a user-only file in /tmp, so create it under LocalApplicationData instead.
+        string appDataRoot = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify);
+        string appData = Path.Combine(appDataRoot, DotnetShift);
+        string appDataTmp = Path.Combine(appData, "tmp");
+        Directory.CreateDirectory(appDataTmp);
+
+        string zipFileName = Path.Combine(appDataTmp, Path.GetRandomFileName());
+        try
+        {
+            // TODO: remove folders like bin, obj.
+            ZipFile.CreateFromDirectory(directory, zipFileName, CompressionLevel.Fastest, includeBaseDirectory: false);
+
+            // Set DeleteOnClose.
+            var handle = File.OpenHandle(zipFileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, FileOptions.DeleteOnClose);
+            return new FileStream(handle, FileAccess.Read);
+        }
+        catch
+        {
+            try
+            {
+                File.Delete(zipFileName);
+            }
+            catch
+            { }
+            throw;
+        }
+    }
+#else
     private static Stream CreateApplicationArchive(string directory)
     {
         // TODO: finetune PipeOptions.
@@ -261,6 +296,7 @@ sealed class DeployCommand : Command
             }
         }
     }
+#endif
 
     private static string GenerateDeploymentConfig(ResourceProperties properties)
     {
