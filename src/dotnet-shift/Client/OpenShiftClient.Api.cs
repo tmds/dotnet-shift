@@ -10,9 +10,8 @@ partial class OpenShiftClient
 
     public async Task<List<Deployment>> ListDeploymentsAsync()
     {
-        var deploymentsList = await _apiClient.ListAppsV1NamespacedDeploymentAsync(Namespace);
+        var deploymentsList = await _apiClient.ListAppsOpenshiftIoV1NamespacedDeploymentConfigAsync(Namespace, labelSelector: $"{ResourceLabels.Runtime}=dotnet,{ResourceLabels.PartOf}");
         var deployments = Map(deploymentsList.Items);
-        deployments = FilterDotnet(deployments);
         return deployments;
     }
 
@@ -122,10 +121,10 @@ partial class OpenShiftClient
         return ex is OpenShift.ApiException  { StatusCode: (int)(System.Net.HttpStatusCode.Conflict) };
     }
 
-    private static List<Deployment> Map(List<OpenShift.Deployment> deployments)
+    private static List<Deployment> Map(List<OpenShift.DeploymentConfig> deployments)
         => deployments.Select(d => Map(d)).ToList();
 
-    private static Deployment Map(OpenShift.Deployment deployment)
+    private static Deployment Map(OpenShift.DeploymentConfig deployment)
         => new Deployment
         {
             Name = deployment.Metadata.Name,
@@ -143,10 +142,4 @@ partial class OpenShiftClient
         {
             Name = project.Metadata.Name
         };
-
-    // This filters against 'app.openshift.io/runtime', so it will miss .NET deployments
-    // that don't have this label set.
-    private static List<T> FilterDotnet<T>(List<T> items) where T : IResource
-        => items.Where(i => i.Labels.TryGetValue(RuntimeLabel, out var v) && v == Dotnet)
-                .ToList();
 }

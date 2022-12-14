@@ -6,7 +6,7 @@ using k8s.KubeConfigModels;
 
 sealed class LoginCommand : Command
 {
-    public LoginCommand() : base("login")
+    public LoginCommand() : base("login", "Log in to a server")
     {
         AddOption(ServerOption);
         AddOption(TokenOption);
