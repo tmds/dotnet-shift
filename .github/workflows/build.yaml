@@ -21,7 +21,7 @@ jobs:
 
     - name: Build packages
       run: |
-        VERSION_SUFFIX="${{ github.run_number }}-${{ github.sha }}"
+        VERSION_SUFFIX="build.${{ github.run_number }}"
         dotnet pack src/dotnet-shift --configuration Release --output src/dotnet-shift /p:VersionSuffix="$VERSION_SUFFIX"
 
     - name: Publish packages
