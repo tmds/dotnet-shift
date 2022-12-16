@@ -14,6 +14,7 @@
     <PackageId>dotnet-shift</PackageId>
     <VersionPrefix>0.1.0</VersionPrefix>
     <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
