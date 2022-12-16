@@ -1,16 +1,10 @@
 using System.CommandLine;
-using System.IO;
-using System.IO.Pipelines;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
-#if NET6_0
-using System.IO.Compression;
-#else
-using System.Formats.Tar;
-#endif
 
-sealed class DeployCommand : Command
+sealed partial class DeployCommand : Command
 {
     private const string DotnetShift = "dotnet-shift";
     private const string Runtime = "dotnet";
@@ -41,17 +35,21 @@ sealed class DeployCommand : Command
         new Argument<string>("PROJECT", defaultValueFactory: () => ".", ".NET project to build");
 
     public static readonly Option<string> AsFileOption =
-        new Option<string>( "--as-file", "Generates a JSON file with resources.");
+        new Option<string>("--as-file", "Generates a JSON file with resources");
+
+    public static readonly Option<string> ContextOption =
+        new Option<string>(new[] { "--context" }, "Context directory for the image build");
 
     public DeployCommand() : base("deploy", "Deploys .NET application")
     {
         Add(ProjectArgument);
         Add(AsFileOption);
+        Add(ContextOption);
 
-        this.SetHandler((project, asFile) => HandleAsync(project, asFile), ProjectArgument, AsFileOption);
+        this.SetHandler((project, asFile, context) => HandleAsync(project, asFile, context), ProjectArgument, AsFileOption, ContextOption);
     }
 
-    public static async Task<int> HandleAsync(string project, string? asFile)
+    public static async Task<int> HandleAsync(string project, string? asFile, string? context)
     {
         // Find the .NET project file.
         string projectFullPath = Path.Combine(Directory.GetCurrentDirectory(), project);
@@ -74,15 +72,66 @@ sealed class DeployCommand : Command
             return 1;
         }
 
-        // TODO: add some smarts (e.g. locate '.git'), and an option (--context).
-        string contextDir = Path.GetDirectoryName(projectFile)!;
+        // Determine context directory.
+        string? contextDir = null;
+        if (context is not null)
+        {
+            contextDir = Path.GetFullPath(context);
+        }
+        else
+        {
+            // Guess what would be an appropriate context directory.
+            // Move up directory by directory until we reach a directory that has a *.sln file, or a .git subdirectory.
+            string projectFileDirectory = Path.GetDirectoryName(projectFile)!;
+            string parentDir = projectFileDirectory;
+            do
+            {
+                if (Directory.Exists(Path.Combine(parentDir, ".git")) ||
+                    Directory.GetFiles(parentDir, "*.sln").Length > 0)
+                {
+                    contextDir = parentDir;
+                    break;
+                }
+                parentDir = Path.GetDirectoryName(parentDir)!;
+                if (parentDir == Path.GetPathRoot(parentDir))
+                {
+                    break;
+                }
+            } while (true);
+
+            // Avoid using '/tmp' and '~' as guesses.
+            if (contextDir == Path.GetTempPath() ||
+                contextDir == Environment.GetFolderPath(Environment.SpecialFolder.UserProfile))
+            {
+                contextDir = null;
+            }
+
+            // Default to the project file directory.
+            if (contextDir is null)
+            {
+                contextDir = projectFileDirectory;
+            }
+
+            if (contextDir != projectFileDirectory)
+            {
+                Console.WriteLine($"Using context directory '{contextDir}'");
+            }
+        }
 
         // verify the project we're build is under the contextDir.
-        if (!projectFullPath.StartsWith(contextDir))
+        // and determine DOTNET_STARTUP_PROJECT.
+        if (!projectFile.StartsWith(contextDir))
         {
             Console.Error.WriteLine($"Project must be a subdirectory of the context directory.");
             return 1;
         }
+        Dictionary<string, string> buildEnvironment = new();
+        string dotnetStartupProject = projectFile.Substring(contextDir.Length).TrimStart(Path.DirectorySeparatorChar);
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            dotnetStartupProject = dotnetStartupProject.Replace('\\', '/');
+        }
+        buildEnvironment["DOTNET_STARTUP_PROJECT"] = dotnetStartupProject;
 
         // Find out .NET version and assembly name.
         ProjectInformation projectInformation = ProjectReader.ReadProjectInfo(projectFile);
@@ -99,11 +148,10 @@ sealed class DeployCommand : Command
             return 1;
         }
 
+        // Generate resource definitions.
         string name = projectInformation.AssemblyName.Replace(".", "-");
         string s2iImage = GetS2iImage(projectInformation.DotnetVersion);
-
-        var props = new ResourceProperties(name ,s2iImage);
-
+        var props = new ResourceProperties(name, s2iImage);
         string deploymentConfig = GenerateDeploymentConfig(props);
         string service = GenerateService(props);
         string imageStream = GenerateImageStream(props);
@@ -113,6 +161,7 @@ sealed class DeployCommand : Command
 
         if (asFile is null)
         {
+            // Update the resources.
             var client = new OpenShiftClient();
 
             Console.WriteLine("Update DeploymentConfig");
@@ -131,7 +180,7 @@ sealed class DeployCommand : Command
             await client.ApplyRouteAsync(route);
 
             Console.WriteLine("Start build");
-            using Stream archiveStream = CreateApplicationArchive(contextDir);
+            using Stream archiveStream = CreateApplicationArchive(contextDir, buildEnvironment);
             await client.StartBinaryBuildAsync(props.DotnetBinaryBuildConfigName, archiveStream);
 
             // ** Any resource types added here must be added to the 'delete' command too. ** //
@@ -141,6 +190,7 @@ sealed class DeployCommand : Command
         }
         else
         {
+            // Write the resources to a file.
             StringBuilder content = new();
             content.Append("""
                            {
@@ -216,89 +266,6 @@ sealed class DeployCommand : Command
             _ => "ubi8"
         };
     }
-
-#if NET6_0
-    private static Stream CreateApplicationArchive(string directory)
-    {
-        // ZipFile doesn't support creating a user-only file in /tmp, so create it under LocalApplicationData instead.
-        string appDataRoot = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify);
-        string appData = Path.Combine(appDataRoot, DotnetShift);
-        string appDataTmp = Path.Combine(appData, "tmp");
-        Directory.CreateDirectory(appDataTmp);
-
-        string zipFileName = Path.Combine(appDataTmp, Path.GetRandomFileName());
-        try
-        {
-            // TODO: remove folders like bin, obj.
-            ZipFile.CreateFromDirectory(directory, zipFileName, CompressionLevel.Fastest, includeBaseDirectory: false);
-
-            // Set DeleteOnClose.
-            var handle = File.OpenHandle(zipFileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, FileOptions.DeleteOnClose);
-            return new FileStream(handle, FileAccess.Read);
-        }
-        catch
-        {
-            try
-            {
-                File.Delete(zipFileName);
-            }
-            catch
-            { }
-            throw;
-        }
-    }
-#else
-    private static Stream CreateApplicationArchive(string directory)
-    {
-        // TODO: finetune PipeOptions.
-        // TODO: remove folders like bin, obj.
-        return Compress(TarStreamFromDirectory(directory));
-
-        static Stream TarStreamFromDirectory(string directory)
-        {
-            var pipe = new Pipe();
-
-            TarFileToPipeWriter(directory, pipe.Writer);
-
-            return pipe.Reader.AsStream();
-
-            static async void TarFileToPipeWriter(string directory, PipeWriter writer)
-            {
-                try
-                {
-                    await TarFile.CreateFromDirectoryAsync(directory, writer.AsStream(), includeBaseDirectory: false);
-                    writer.Complete();
-                }
-                catch (Exception ex)
-                {
-                    writer.Complete(ex);
-                }
-            }
-        }
-
-        static Stream Compress(Stream stream)
-        {
-            var pipe = new Pipe();
-
-            StreamToPipeWriter(stream, pipe.Writer);
-
-            return pipe.Reader.AsStream();
-
-            static async void StreamToPipeWriter(Stream stream, PipeWriter writer)
-            {
-                try
-                {
-                    await stream.CopyToAsync(writer.AsStream());
-                    writer.Complete();
-                }
-                catch (Exception ex)
-                {
-                    writer.Complete(ex);
-                }
-            }
-        }
-    }
-#endif
 
     private static string GenerateDeploymentConfig(ResourceProperties properties)
     {
