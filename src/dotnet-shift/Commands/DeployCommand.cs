@@ -149,7 +149,9 @@ sealed partial class DeployCommand : Command
         }
 
         // Generate resource definitions.
-        string name = projectInformation.AssemblyName.Replace(".", "-");
+        string name = projectInformation.AssemblyName;
+        // a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character
+        name = name.Replace(".", "-").ToLowerInvariant();
         string s2iImage = GetS2iImage(projectInformation.DotnetVersion);
         var props = new ResourceProperties(name, s2iImage);
         string deploymentConfig = GenerateDeploymentConfig(props);
