@@ -9,13 +9,15 @@ sealed partial class DeployCommand : Command
     private const string DotnetShift = "dotnet-shift";
     private const string Runtime = "dotnet";
     private const string ContainerName = "app";
+    private const string DotnetImageStreamName = "dotnet";
 
     record ResourceProperties
     {
         [SetsRequiredMembers]
-        public ResourceProperties(string name, string s2iImage)
+        public ResourceProperties(string name, string dotnetVersion, string s2iImage)
         {
             AppName = Instance = DotnetAppName = DotnetComponent = name;
+            DotnetVersion = dotnetVersion;
             DotnetS2iImage = s2iImage;
         }
         public required string AppName { get; init; }
@@ -23,6 +25,7 @@ sealed partial class DeployCommand : Command
 
         public required string DotnetAppName { get; init; }
         public required string DotnetS2iImage { get; init; }
+        public required string DotnetVersion { get; init; }
         public required string DotnetComponent { get; init; }
 
         public string DotnetAppImageName => DotnetAppName;
@@ -153,11 +156,12 @@ sealed partial class DeployCommand : Command
         // a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character
         name = name.Replace(".", "-").ToLowerInvariant();
         string s2iImage = GetS2iImage(projectInformation.DotnetVersion);
-        var props = new ResourceProperties(name, s2iImage);
+        var props = new ResourceProperties(name, projectInformation.DotnetVersion, s2iImage);
         string deploymentConfig = GenerateDeploymentConfig(props);
         string service = GenerateService(props);
         string imageStream = GenerateImageStream(props);
         string buildConfig = GenerateBinaryBuildConfig(props);
+        string dotnetImageStreamTag = GenerateDotnetImageStreamTag(props);
         // TODO: add --expose option.
         string route = GenerateRoute(props);
 
@@ -165,6 +169,12 @@ sealed partial class DeployCommand : Command
         {
             // Update the resources.
             var client = new OpenShiftClient();
+
+            bool added = await client.CreateImageStreamTagAsync(DotnetImageStreamName, dotnetImageStreamTag);
+            if (added)
+            {
+                Console.WriteLine($"Added '{DotnetImageStreamName}:{props.DotnetVersion}' image stream tag");
+            }
 
             Console.WriteLine("Update DeploymentConfig");
             await client.ApplyDeploymentConfigAsync(deploymentConfig);
@@ -267,6 +277,30 @@ sealed partial class DeployCommand : Command
         {
             _ => "ubi8"
         };
+    }
+
+    private static string GenerateDotnetImageStreamTag(ResourceProperties properties)
+    {
+        // note: we're setting a scheduled importPolicy so OpenShift will check
+        //       the image registry for updates.
+        return $$"""
+        {
+            "name": "{{properties.DotnetVersion}}",
+            "annotations": {
+                "openshift.io/display-name": ".NET {{properties.DotnetVersion}}"
+            },
+            "referencePolicy": {
+                "type": "Local"
+            },
+            "from": {
+                "kind": "DockerImage",
+                "name": "{{properties.DotnetS2iImage}}"
+            },
+            "importPolicy": {
+                "scheduled": "true"
+            }
+        }
+        """;
     }
 
     private static string GenerateDeploymentConfig(ResourceProperties properties)
@@ -408,8 +442,8 @@ sealed partial class DeployCommand : Command
                 "strategy": {
                     "sourceStrategy": {
                         "from": {
-                            "kind": "DockerImage",
-                            "name": "{{properties.DotnetS2iImage}}"
+                            "kind": "ImageStreamTag",
+                            "name": "{{DotnetImageStreamName}}:{{properties.DotnetVersion}}"
                         }
                     },
                     "type": "Source"

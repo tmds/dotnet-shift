@@ -111,6 +111,47 @@ partial class OpenShiftClient
         }
     }
 
+    public async Task<bool> CreateImageStreamTagAsync(string imageStreamName, string tagReference)
+    {
+        var body = JsonConvert.DeserializeObject<OpenShift.TagReference>(tagReference);
+        try
+        {
+            string tagName = body.Name;
+
+            OpenShift.ImageStream imageStream = await _apiClient.ReadImageOpenshiftIoV1NamespacedImageStreamAsync(imageStreamName, Namespace);
+            foreach (var tag in imageStream.Spec.Tags)
+            {
+                if (tag.Name == tagName)
+                {
+                    // tag exists.
+                    return false;
+                }
+            }
+
+            imageStream.Spec.Tags.Add(body);
+            await _apiClient.ReplaceImageOpenshiftIoV1NamespacedImageStreamAsync(imageStream, imageStreamName, Namespace);
+            return true;
+        }
+        catch (Exception ex) when (IsResourceNotFound(ex))
+        {
+            OpenShift.ImageStream imageStream = new()
+            {
+                ApiVersion = "image.openshift.io/v1",
+                Kind = "ImageStream",
+                Spec = new()
+                {
+                    Tags = new() { body }
+                },
+                Metadata = new()
+                {
+                    Name = imageStreamName
+                }
+            };
+            await _apiClient.CreateImageOpenshiftIoV1NamespacedImageStreamAsync(imageStream, Namespace);
+            return true;
+        }
+    }
+
     public async Task ApplyServiceAsync(string service)
     {
         var body = JsonConvert.DeserializeObject<OpenShift.Service2>(service);
@@ -183,6 +224,11 @@ partial class OpenShiftClient
     private static bool IsResourceExists(Exception ex)
     {
         return ex is OpenShift.ApiException  { StatusCode: (int)(System.Net.HttpStatusCode.Conflict) };
+    }
+
+    private static bool IsResourceNotFound(Exception ex)
+    {
+        return ex is OpenShift.ApiException  { StatusCode: (int)(System.Net.HttpStatusCode.NotFound) };
     }
 
     private static List<Deployment> Map(List<OpenShift.DeploymentConfig> deployments)
