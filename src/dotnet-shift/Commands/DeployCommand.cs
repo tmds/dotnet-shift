@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using LibGit2Sharp;
 
 sealed partial class DeployCommand : Command
 {
@@ -27,6 +28,8 @@ sealed partial class DeployCommand : Command
         public required string DotnetS2iImage { get; init; }
         public required string DotnetVersion { get; init; }
         public required string DotnetComponent { get; init; }
+        public string DotnetAppGitUri { get; init; } = "";
+        public string DotnetAppGitRef { get; init; } = "";
 
         public string DotnetAppImageName => DotnetAppName;
         public string DotnetBinaryBuildConfigName => $"{DotnetAppName}-binary";
@@ -43,16 +46,20 @@ sealed partial class DeployCommand : Command
     public static readonly Option<string> ContextOption =
         new Option<string>(new[] { "--context" }, "Context directory for the image build");
 
+    public static readonly Option<bool> FromGitOption =
+        new Option<bool>(new[] { "--from-git" }, "Build using the git repository")  { Arity = ArgumentArity.Zero };
+
     public DeployCommand() : base("deploy", "Deploys .NET application")
     {
         Add(ProjectArgument);
         Add(AsFileOption);
         Add(ContextOption);
+        Add(FromGitOption);
 
-        this.SetHandler((project, asFile, context) => HandleAsync(project, asFile, context), ProjectArgument, AsFileOption, ContextOption);
+        this.SetHandler((project, asFile, context, fromGit) => HandleAsync(project, asFile, context, fromGit), ProjectArgument, AsFileOption, ContextOption, FromGitOption);
     }
 
-    public static async Task<int> HandleAsync(string project, string? asFile, string? context)
+    public static async Task<int> HandleAsync(string project, string? asFile, string? context, bool fromGit)
     {
         // Find the .NET project file.
         string projectFullPath = Path.Combine(Directory.GetCurrentDirectory(), project);
@@ -80,6 +87,15 @@ sealed partial class DeployCommand : Command
         if (context is not null)
         {
             contextDir = Path.GetFullPath(context);
+
+            if (fromGit)
+            {
+                if (!Directory.Exists(Path.Combine(contextDir, ".git")))
+                {
+                    Console.Error.WriteLine($"The specified context directory must be a git repository when using --from-git.");
+                    return 1;
+                }
+            }
         }
         else
         {
@@ -90,7 +106,7 @@ sealed partial class DeployCommand : Command
             do
             {
                 if (Directory.Exists(Path.Combine(parentDir, ".git")) ||
-                    Directory.GetFiles(parentDir, "*.sln").Length > 0)
+                    (Directory.GetFiles(parentDir, "*.sln").Length > 0 && !fromGit))
                 {
                     contextDir = parentDir;
                     break;
@@ -101,6 +117,12 @@ sealed partial class DeployCommand : Command
                     break;
                 }
             } while (true);
+
+            if (fromGit && contextDir is null)
+            {
+                Console.Error.WriteLine($"The specified project must be part of a git repository when using --from-git.");
+                return 1;
+            }
 
             // Avoid using '/tmp' and '~' as guesses.
             if (contextDir == Path.GetTempPath() ||
@@ -151,17 +173,53 @@ sealed partial class DeployCommand : Command
             return 1;
         }
 
+        string gitUri = "";
+        string gitRef = "";
+        if (fromGit)
+        {
+            var gitRepo = new Repository(contextDir);
+
+            Branch? remoteBranch = gitRepo.Head?.TrackedBranch;
+            if (remoteBranch is null)
+            {
+                Console.Error.WriteLine($"The git repository is not tracking a remote branch.");
+                return 1;
+            }
+
+            // determine gitUri
+            string remoteName = remoteBranch.RemoteName;
+            Remote remote = gitRepo.Network.Remotes.First(r => r.Name == remoteName);
+            gitUri = remote.Url;
+
+            // determine gitRef
+            string canonicalBranchName = remoteBranch.UpstreamBranchCanonicalName;
+            if (!canonicalBranchName.StartsWith("refs/heads/"))
+            {
+                Console.Error.WriteLine($"Cannot determine remote branch name from '{canonicalBranchName}'.");
+                return 1;
+            }
+            gitRef = canonicalBranchName.Substring("refs/heads/".Length);
+
+            Console.WriteLine($"Application will be built from {gitUri}#{gitRef}");
+        }
+
         // Generate resource definitions.
         string name = projectInformation.AssemblyName;
         // a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character
         name = name.Replace(".", "-").ToLowerInvariant();
         string s2iImage = GetS2iImage(projectInformation.DotnetVersion);
-        var props = new ResourceProperties(name, projectInformation.DotnetVersion, s2iImage);
+        var props = new ResourceProperties(name, projectInformation.DotnetVersion, s2iImage)
+        {
+            DotnetAppGitRef = gitRef,
+            DotnetAppGitUri = gitUri
+        };
+
+        string dotnetImageStreamTag = GenerateDotnetImageStreamTag(props);
         string deploymentConfig = GenerateDeploymentConfig(props);
         string service = GenerateService(props);
         string imageStream = GenerateImageStream(props);
-        string buildConfig = GenerateBinaryBuildConfig(props);
-        string dotnetImageStreamTag = GenerateDotnetImageStreamTag(props);
+        // TODO: can we use the source-buildconfig for binary builds?
+        string buildConfig = fromGit ? GenerateSourceBuildConfig(props, buildEnvironment) : GenerateBinaryBuildConfig(props);
         // TODO: add --expose option.
         string route = GenerateRoute(props);
 
@@ -192,8 +250,16 @@ sealed partial class DeployCommand : Command
             await client.ApplyRouteAsync(route);
 
             Console.WriteLine("Start build");
-            using Stream archiveStream = CreateApplicationArchive(contextDir, buildEnvironment);
-            await client.StartBinaryBuildAsync(props.DotnetBinaryBuildConfigName, archiveStream);
+            if (fromGit)
+            {
+                await client.StartBuildAsync(props.DotnetAppName);
+            }
+            else
+            {
+                // build from local sources.
+                using Stream archiveStream = CreateApplicationArchive(contextDir, buildEnvironment);
+                await client.StartBinaryBuildAsync(props.DotnetBinaryBuildConfigName, archiveStream);
+            }
 
             // ** Any resource types added here must be added to the 'delete' command too. ** //
 
@@ -412,6 +478,91 @@ sealed partial class DeployCommand : Command
             }
         }
         """;
+    }
+
+    private static string GenerateSourceBuildConfig(ResourceProperties properties, Dictionary<string, string> environment)
+    {
+        // note: ImageChange trigger causes the app image to be rebuilt when a new s2i base image is available.
+
+        // TODO: support source secret
+        // TODO: support adding webhooks
+        return $$"""
+        {
+            "apiVersion": "build.openshift.io/v1",
+            "kind": "BuildConfig",
+            "metadata": {
+                "labels": {
+                    {{DotnetResourceLabels(properties, includeRuntimeLabels: true)}}
+                },
+                "name": "{{properties.DotnetAppName}}"
+            },
+            "spec": {
+                "failedBuildsHistoryLimit": 5,
+                "successfulBuildsHistoryLimit": 5,
+                "output": {
+                    "to": {
+                        "kind": "ImageStreamTag",
+                        "name": "{{properties.DotnetAppImageName}}:latest"
+                    }
+                },
+                "source": {
+                    "type": "Binary"
+                },
+                "strategy": {
+                    "sourceStrategy": {
+                        "from": {
+                            "kind": "ImageStreamTag",
+                            "name": "{{DotnetImageStreamName}}:{{properties.DotnetVersion}}"
+                        },
+                        "env": [
+                            {{GenerateEnvSection(environment)}}
+                        ]
+                    },
+                    "type": "Source"
+                },
+                "source": {
+                    "type": "Git",
+                    "git": {
+                        "uri": "{{properties.DotnetAppGitUri}}",
+                        "ref": "{{properties.DotnetAppGitRef}}"
+                    }
+                },
+                "triggers": [
+                    {
+                        "type": "ImageChange",
+                        "imageChange": {}
+                    }
+                ],
+                "runPolicy": "Serial"
+            }
+        }
+        """;
+
+        static string GenerateEnvSection(Dictionary<string, string> environment)
+        {
+            StringBuilder sb = new();
+            bool first = true;
+            foreach (var envvar in environment)
+            {
+                if (!first)
+                {
+                    sb.Append(", ");
+                }
+                else
+                {
+                    sb.Append("  ");
+                }
+                first = false;
+
+                sb.Append($$"""
+                        {
+                            "name": "{{envvar.Key}}",
+                            "value": "{{envvar.Value}}"
+                        }
+                        """);
+            }
+            return sb.ToString();
+        }
     }
 
     private static string GenerateBinaryBuildConfig(ResourceProperties properties)

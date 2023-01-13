@@ -136,8 +136,6 @@ partial class OpenShiftClient
         {
             OpenShift.ImageStream imageStream = new()
             {
-                ApiVersion = "image.openshift.io/v1",
-                Kind = "ImageStream",
                 Spec = new()
                 {
                     Tags = new() { body }
@@ -195,6 +193,7 @@ partial class OpenShiftClient
         }
         catch (Exception ex) when (IsResourceExists(ex))
         {
+            // TODO: update instead of deleting ...
             // Delete and re-create.
             string name = body.Metadata.Name;
             await _apiClient.DeleteBuildOpenshiftIoV1NamespacedBuildConfigAsync(name, Namespace);
@@ -219,6 +218,18 @@ partial class OpenShiftClient
     public async Task StartBinaryBuildAsync(string buildConfigName, Stream compressedApp)
     {
         await _apiClient.ConnectBuildOpenshiftIoV1PostNamespacedBuildConfigInstantiatebinaryAsync(buildConfigName, Namespace, new StreamContent(compressedApp));
+    }
+
+    public async Task StartBuildAsync(string buildConfigName)
+    {
+        OpenShift.BuildRequest body = new()
+        {
+            Metadata = new()
+            {
+                Name = buildConfigName
+            }
+        };
+        await _apiClient.CreateBuildOpenshiftIoV1NamespacedBuildConfigInstantiateAsync(body, buildConfigName, Namespace);
     }
 
     private static bool IsResourceExists(Exception ex)
