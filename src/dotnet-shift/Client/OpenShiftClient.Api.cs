@@ -89,7 +89,20 @@ partial class OpenShiftClient
     {
         var projectList = await _apiClient.ListProjectOpenshiftIoV1ProjectAsync();
         var projects = projectList.Items.Select(Map);
+        projects = projects.OrderBy(projectList => projectList.Name, StringComparer.Ordinal);
         return projects.ToList();
+    }
+
+    public async Task CreateProjectAsync(string ns)
+    {
+        OpenShift.ProjectRequest request = new()
+        {
+            Metadata = new()
+            {
+                Name = ns
+            }
+        };
+        await _apiClient.CreateProjectOpenshiftIoV1ProjectRequestAsync(request);
     }
 
     public async Task ApplyDeploymentConfigAsync(string deploymentConfig)

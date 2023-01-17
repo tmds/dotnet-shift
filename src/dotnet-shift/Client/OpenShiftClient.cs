@@ -5,6 +5,7 @@ partial class OpenShiftClient
 {
     public string Namespace { get; }
 
+    // TODO: use LoginContext argument.
     public OpenShiftClient(string baseUrl, string token)
     {
         Namespace = "";

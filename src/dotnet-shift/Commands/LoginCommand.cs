@@ -1,8 +1,4 @@
 using System.CommandLine;
-using System.Runtime.InteropServices;
-using System.Text;
-using k8s;
-using k8s.KubeConfigModels;
 
 sealed class LoginCommand : Command
 {
@@ -24,6 +20,7 @@ sealed class LoginCommand : Command
     {
         // TODO: handle no projects, Kubernetes, prefer project known in ~/.kube/config.
         var projects = await client.ListProjectsAsync();
+
         return projects[0].Name;
     }
 
@@ -31,114 +28,44 @@ sealed class LoginCommand : Command
     {
         var client = new OpenShiftClient(server, token);
         string userName = await DetermineUserNameAsync(client);
-        string ns = await DetermineNamespaceAsync(client);
+        List<Project> projects = await client.ListProjectsAsync();
 
-        Uri serverUri = new Uri(server); // TODO: handle invalid uri format.
-        string clusterId = $"{serverUri.Host.Replace('.', '-')}:{serverUri.Port}";
-        string userId = $"{userName}/{clusterId}";
-        string contextId = $"{ns}/{clusterId}/{userName}";
+        Console.WriteLine($"Logged into '{server}' as 'userName' using the token provided.");
+        Console.WriteLine();
 
-        Cluster cluster = new()
+        string ns;
+
+        if (projects.Count > 0)
         {
-            Name = clusterId,
-            ClusterEndpoint = new()
+            Console.WriteLine("You have access to the following namespaces and can switch between them with 'dotnet shift namespace set <NAMESPACE>':");
+            Console.WriteLine();
+            foreach (var project in projects)
             {
-                Server = server
+                Console.WriteLine($"    {project.Name}");
             }
-        };
-        Context context = new()
-        {
-            Name = contextId,
-            ContextDetails = new() { Cluster = clusterId, User = userId, Namespace = ns }
-        };
-        k8s.KubeConfigModels.User user = new()
-        {
-            Name = userId,
-            UserCredentials = new() { Token = token }
-        };
+            Console.WriteLine();
 
-        var configFilePath = KubernetesClientConfiguration.KubeConfigDefaultLocation;
-        if (File.Exists(configFilePath))
-        {
-            UpdateConfigfile(configFilePath, cluster, context, user);
+            ns = projects[0].Name;
         }
         else
         {
-            CreateConfigfile(configFilePath, cluster, context, user);
+            Console.WriteLine("No accessible namespaces found.");
+            Console.WriteLine("You can create a namespace using 'dotnet shift namespace create <NAMESPACE>':");
+            Console.WriteLine();
+
+            ns = "default";
         }
-    }
+        Console.WriteLine($"Using namespace '{ns}'.");
 
-    private static void UpdateConfigfile(string configFilePath, Cluster cluster, Context context, k8s.KubeConfigModels.User user)
-    {
-        K8SConfiguration config = KubernetesClientConfiguration.LoadKubeConfig(configFilePath);
-        config.CurrentContext = context.Name;
-        config.Contexts = AppendToList(config.Contexts, context, context => context.Name);
-        config.Users = AppendToList(config.Users, user, user => user.Name);
-        config.Clusters = AppendToList(config.Clusters, cluster, cluster => cluster.Name);
-
-        WriteConfigFile(configFilePath, config);
-
-        static IEnumerable<T> AppendToList<T>(IEnumerable<T>? items, T item, Func<T, string> getName)
+        LoginContext context = new()
         {
-            List<T> merged = new();
-            if (items is not null)
-            {
-                foreach (var i in items)
-                {
-                    if (getName(i) != getName(item))
-                    {
-                        merged.Add(i);
-                    }
-                }
-            }
-            merged.Add(item);
-            return merged;
-        }
-    }
-
-    private static void CreateConfigfile(string configFilePath, Cluster cluster, Context context, k8s.KubeConfigModels.User user)
-    {
-        // Ensure directory exists.
-        string directory = Path.GetDirectoryName(configFilePath)!;
-        Directory.CreateDirectory(directory);
-
-        K8SConfiguration config = new()
-        {
-            ApiVersion = "v1",
-            Kind = "Config",
-            CurrentContext = context.Name,
-            Contexts = new[] { context },
-            Users = new[] { user },
-            Clusters = new[] { cluster }
-        };
-        WriteConfigFile(configFilePath, config);
-    }
-
-    private static void WriteConfigFile(string configFilePath, K8SConfiguration config)
-    {
-        FileStreamOptions fso = new()
-        {
-            Access = FileAccess.Write,
-            Mode = FileMode.Create, // Create new or truncate existing.
+            Server = server,
+            UserName = userName,
+            Namespace = ns,
+            Token = token
         };
 
-        // Make the config file rw for the user only.
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-#if NET6_0
-            if (!File.Exists(configFilePath))
-            {
-                // temp files have user-only access.
-                string userFile = Path.GetTempFileName();
-                File.Move(userFile, configFilePath);
-            }
-#else
-            fso.UnixCreateMode = UnixFileMode.UserWrite | UnixFileMode.UserRead;
-#endif
-        }
-
-        using var fs = new FileStream(configFilePath, fso);
-        fs.Write(Encoding.UTF8.GetBytes(KubernetesYaml.Serialize(config)));
+        KubernetesClientConfigFile.Update(context);
     }
 
     public static readonly Option<string> ServerOption =
