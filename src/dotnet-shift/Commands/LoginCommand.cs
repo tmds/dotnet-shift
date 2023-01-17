@@ -1,4 +1,6 @@
 using System.CommandLine;
+using System.Diagnostics;
+using System.Security.Authentication;
 
 sealed class LoginCommand : Command
 {
@@ -6,8 +8,9 @@ sealed class LoginCommand : Command
     {
         AddOption(ServerOption);
         AddOption(TokenOption);
+        AddOption(InsecureSkipTlsVerifyOption);
 
-        this.SetHandler((string server, string token) => HandleAsync(server, token), ServerOption, TokenOption);
+        this.SetHandler((string server, string token, bool skipVerify) => HandleAsync(server, token, skipVerify), ServerOption, TokenOption, InsecureSkipTlsVerifyOption);
     }
 
     private static async Task<string> DetermineUserNameAsync(OpenShiftClient client)
@@ -24,10 +27,68 @@ sealed class LoginCommand : Command
         return projects[0].Name;
     }
 
-    public static async Task HandleAsync(string server, string token)
+    public static async Task<int> HandleAsync(string server, string token, bool skipVerify)
     {
-        var client = new OpenShiftClient(server, token);
-        string userName = await DetermineUserNameAsync(client);
+        LoginContext login = new()
+        {
+            Server = server,
+            Token = token,
+            SkipTlsVerify = skipVerify,
+            UserName = "",
+            Namespace = ""
+        };
+        var client = new OpenShiftClient(login);
+        string? userName = null;
+        try
+        {
+            userName = await DetermineUserNameAsync(client);
+        }
+        catch (HttpRequestException ex) when (!skipVerify && ex.InnerException is AuthenticationException)
+        {
+            Debug.Assert(!skipVerify);
+
+            // Can we log in skipping ssl verification
+            login.SkipTlsVerify = true;
+            client = new OpenShiftClient(login);
+            try
+            {
+                userName = await DetermineUserNameAsync(client);
+
+                Console.WriteLine("The server uses a certificate signed by an unknown authority.");
+                Console.WriteLine("You can bypass the certificate check, but any data you send to the server could be intercepted by others.");
+                while (true)
+                {
+                    Console.Write("Use insecure connections? (y/n): ");
+                    string? answer = Console.ReadLine();
+                    answer ??= "no";
+
+                    if (answer == "yes" || answer == "y")
+                    {
+                        skipVerify = true;
+                        break;
+                    }
+                    else if (answer == "no" || answer == "n")
+                    {
+                        Console.WriteLine();
+                        Console.Error.WriteLine($"error: The remote server is not trusted.");
+                        return 1;
+                    }
+                    else
+                    {
+                        System.Console.WriteLine("Please enter 'yes' or 'no'.");
+                    }
+                }
+            }
+            catch
+            { }
+
+            if (!skipVerify)
+            {
+                throw;
+            }
+            Debug.Assert(userName is not null);
+        }
+
         List<Project> projects = await client.ListProjectsAsync();
 
         Console.WriteLine($"Logged into '{server}' as 'userName' using the token provided.");
@@ -62,10 +123,13 @@ sealed class LoginCommand : Command
             Server = server,
             UserName = userName,
             Namespace = ns,
-            Token = token
+            Token = token,
+            SkipTlsVerify = skipVerify
         };
 
         KubernetesClientConfigFile.Update(context);
+
+        return 0;
     }
 
     public static readonly Option<string> ServerOption =
@@ -75,4 +139,7 @@ sealed class LoginCommand : Command
     public static readonly Option<string> TokenOption =
         new Option<string>(new[] { "--token" }, "Bearer token for authentication to the API server")
         { IsRequired = true };
+
+    public static readonly Option<bool> InsecureSkipTlsVerifyOption =
+        new Option<bool>(new[] { "--insecure-skip-tls-verify" }, "If true, the server's certificate will not be checked for validity (insecure)")  { Arity = ArgumentArity.Zero };
 }

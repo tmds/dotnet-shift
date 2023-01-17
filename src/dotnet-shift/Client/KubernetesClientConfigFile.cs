@@ -9,6 +9,7 @@ sealed class LoginContext
     public required string Token { get; set; }
     public required string UserName { get; set; }
     public required string Namespace { get; set; }
+    public required bool SkipTlsVerify { get; set; }
 }
 
 static class KubernetesClientConfigFile
@@ -22,7 +23,8 @@ static class KubernetesClientConfigFile
             Server = config.Host,
             Token = config.AccessToken,
             UserName = config.Username,
-            Namespace = config.Namespace
+            Namespace = config.Namespace, 
+            SkipTlsVerify = config.SkipTlsVerify
         };
     }
 
@@ -43,8 +45,9 @@ static class KubernetesClientConfigFile
             Name = clusterId,
             ClusterEndpoint = new()
             {
-                Server = server
-            }
+                Server = server,
+                SkipTlsVerify = ctx.SkipTlsVerify
+            },
         };
         Context context = new()
         {

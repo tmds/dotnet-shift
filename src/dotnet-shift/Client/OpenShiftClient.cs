@@ -1,36 +1,31 @@
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.Security;
 
 partial class OpenShiftClient
 {
     public string Namespace { get; }
 
-    // TODO: use LoginContext argument.
-    public OpenShiftClient(string baseUrl, string token)
-    {
-        Namespace = "";
-        _apiClient = CreateApiClient(baseUrl, token);
-    }
+    public OpenShiftClient() : this(KubernetesClientConfigFile.GetDefaultContext())
+    { }
 
-    public OpenShiftClient()
+    public OpenShiftClient(LoginContext login)
     {
-        var config = k8s.KubernetesClientConfiguration.BuildDefaultConfig();
-
-        Namespace = config.Namespace;
+        Namespace = login.Namespace;
  
-        _apiClient = CreateApiClient(config.Host, config.AccessToken);
+        _apiClient = CreateApiClient(login.Server, login.Token, login.SkipTlsVerify);
     }
 
-    private OpenShift.OpenShiftApiClient CreateApiClient(string baseUrl, string token)
+    private OpenShift.OpenShiftApiClient CreateApiClient(string baseUrl, string token, bool skipTlsVerify)
     {
-        var httpClient = new HttpClient(new MessageHandler());
+        var httpClient = new HttpClient(new MessageHandler(skipTlsVerify));
         httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return new OpenShift.OpenShiftApiClient(baseUrl, httpClient);
     }
 
     private class MessageHandler : DelegatingHandler
     {
-        public MessageHandler() : base(new SocketsHttpHandler())
+        public MessageHandler(bool skipTlsVerify) : base(CreateBaseHandler(skipTlsVerify))
         { }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -41,6 +36,22 @@ partial class OpenShiftClient
                 request.Content.Headers.ContentType.MediaType = "application/json";
             }
             return base.SendAsync(request, cancellationToken);
+        }
+
+        private static HttpMessageHandler CreateBaseHandler(bool skipTlsVerify)
+        {
+            var handler = new SocketsHttpHandler();
+
+            if (skipTlsVerify)
+            {
+                handler.SslOptions = new SslClientAuthenticationOptions()
+                {
+                    // TODO: only ignore unknown root?
+                    RemoteCertificateValidationCallback = delegate { return true; },
+                };
+            }
+
+            return handler;
         }
     }
 }
