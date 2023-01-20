@@ -21,6 +21,7 @@
     <PackageReference Include="KubernetesClient" Version="9.0.38" />
     <PackageReference Include="libgit2sharp" Version="0.27.0-* " />
     <PackageReference Include="Microsoft.Build.Locator" Version="1.5.5" />
+    <PackageReference Include="SshKeyGenerator" Version="1.1.50" />
     <PackageReference Include="System.CommandLine" Version="2.0.0-*" />
     <PackageReference Include="System.IO.Pipelines" Version="7.0.0" />
     <PackageReference Include="Microsoft.Build" Version="17.4.0" ExcludeAssets="runtime" />
