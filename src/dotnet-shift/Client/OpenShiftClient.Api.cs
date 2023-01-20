@@ -178,6 +178,25 @@ partial class OpenShiftClient
         }
     }
 
+    public async Task CreateSecretAsync(string secret)
+    {
+        var body = JsonConvert.DeserializeObject<OpenShift.Secret>(secret);
+        await _apiClient.CreateCoreV1NamespacedSecretAsync(body, Namespace);
+    }
+
+    public async Task<bool> ExistsSecretAsync(string secret)
+    {
+        try
+        {
+            await _apiClient.ReadCoreV1NamespacedSecretAsync(secret, Namespace);
+            return true;
+        }
+        catch (Exception ex) when (IsResourceNotFound(ex))
+        {
+            return false;
+        }
+    }
+
     public async Task ApplyImageStreamAsync(string imageStream)
     {
         var body = JsonConvert.DeserializeObject<OpenShift.ImageStream>(imageStream);

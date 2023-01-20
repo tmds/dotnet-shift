@@ -7,20 +7,12 @@ using LibGit2Sharp;
 
 sealed partial class DeployCommand : Command
 {
-    private const string DotnetShift = "dotnet-shift";
     private const string Runtime = "dotnet";
     private const string ContainerName = "app";
     private const string DotnetImageStreamName = "dotnet";
 
     record ResourceProperties
     {
-        [SetsRequiredMembers]
-        public ResourceProperties(string name, string dotnetVersion, string s2iImage)
-        {
-            AppName = Instance = DotnetAppName = DotnetComponent = name;
-            DotnetVersion = dotnetVersion;
-            DotnetS2iImage = s2iImage;
-        }
         public required string AppName { get; init; }
         public required string Instance { get; init; }
 
@@ -28,13 +20,13 @@ sealed partial class DeployCommand : Command
         public required string DotnetS2iImage { get; init; }
         public required string DotnetVersion { get; init; }
         public required string DotnetComponent { get; init; }
+        public required string? DotnetSourceSecret { get; init; }
+
         public string DotnetAppGitUri { get; init; } = "";
         public string DotnetAppGitRef { get; init; } = "";
 
         public string DotnetAppImageName => DotnetAppName;
         public string DotnetBinaryBuildConfigName => $"{DotnetAppName}-binary";
-        public string ManagedBy => "dotnet-shift";
-        public string DotnetRuntime => "dotnet";
     }
 
     public static readonly Argument<string> ProjectArgument =
@@ -49,18 +41,31 @@ sealed partial class DeployCommand : Command
     public static readonly Option<bool> FromGitOption =
         new Option<bool>(new[] { "--from-git" }, "Build using the git repository")  { Arity = ArgumentArity.Zero };
 
+    public static readonly Option<string> SourceSecretOption =
+        new Option<string>(new[] { "--source-secret" }, "Secret used for cloning the source code");
+
     public DeployCommand() : base("deploy", "Deploys .NET application")
     {
         Add(ProjectArgument);
         Add(AsFileOption);
         Add(ContextOption);
         Add(FromGitOption);
+        Add(SourceSecretOption);
 
-        this.SetHandler((project, asFile, context, fromGit) => HandleAsync(project, asFile, context, fromGit), ProjectArgument, AsFileOption, ContextOption, FromGitOption);
+        this.SetHandler((project, asFile, context, fromGit, sourceSecret) => HandleAsync(project, asFile, context, fromGit, sourceSecret), ProjectArgument, AsFileOption, ContextOption, FromGitOption, SourceSecretOption);
     }
 
-    public static async Task<int> HandleAsync(string project, string? asFile, string? context, bool fromGit)
+    public static async Task<int> HandleAsync(string project, string? asFile, string? context, bool fromGit, string? sourceSecret)
     {
+        if (!fromGit)
+        {
+            if (sourceSecret is not null)
+            {
+                Console.Error.WriteLine($"The --source-secret option is only used when --from-git is specified and will be ignored.");
+                sourceSecret = null;
+            }
+        }
+
         // Find the .NET project file.
         string projectFullPath = Path.Combine(Directory.GetCurrentDirectory(), project);
         string? projectFile = null;
@@ -208,10 +213,18 @@ sealed partial class DeployCommand : Command
         // a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character
         name = name.Replace(".", "-").ToLowerInvariant();
         string s2iImage = GetS2iImage(projectInformation.DotnetVersion);
-        var props = new ResourceProperties(name, projectInformation.DotnetVersion, s2iImage)
+        var props = new ResourceProperties()
         {
+            AppName = name,
+            Instance = name,
+
+            DotnetAppName = name,
+            DotnetComponent = name,
+            DotnetVersion = projectInformation.DotnetVersion,
+            DotnetS2iImage = s2iImage,
             DotnetAppGitRef = gitRef,
-            DotnetAppGitUri = gitUri
+            DotnetAppGitUri = gitUri,
+            DotnetSourceSecret = sourceSecret
         };
 
         string dotnetImageStreamTag = GenerateDotnetImageStreamTag(props);
@@ -227,6 +240,17 @@ sealed partial class DeployCommand : Command
         {
             // Update the resources.
             var client = new OpenShiftClient();
+
+            if (sourceSecret is not null)
+            {
+                bool exists = await client.ExistsSecretAsync(sourceSecret);
+                if (!exists)
+                {
+                    Console.Error.WriteLine($"The specified source secret '{sourceSecret}' does not exist.");
+                    Console.Error.WriteLine($"You can create it using the 'secret' command.");
+                    return 1;
+                }
+            }
 
             bool added = await client.CreateImageStreamTagAsync(DotnetImageStreamName, dotnetImageStreamTag);
             if (added)
@@ -484,7 +508,6 @@ sealed partial class DeployCommand : Command
     {
         // note: ImageChange trigger causes the app image to be rebuilt when a new s2i base image is available.
 
-        // TODO: support source secret
         // TODO: support adding webhooks
         return $$"""
         {
@@ -526,6 +549,7 @@ sealed partial class DeployCommand : Command
                         "uri": "{{properties.DotnetAppGitUri}}",
                         "ref": "{{properties.DotnetAppGitRef}}"
                     }
+                    {{GenerateSourceSecretSection(properties.DotnetSourceSecret)}}
                 },
                 "triggers": [
                     {
@@ -562,6 +586,23 @@ sealed partial class DeployCommand : Command
                         """);
             }
             return sb.ToString();
+        }
+
+        static string GenerateSourceSecretSection(string? sourceSecret)
+        {
+            if (sourceSecret is null)
+            {
+                return "";
+            }
+            else
+            {
+                return $$"""
+                            ,
+                            "sourceSecret": {
+                                "name": "{{sourceSecret}}"
+                            }
+                        """;
+            }
         }
     }
 
@@ -632,7 +673,7 @@ sealed partial class DeployCommand : Command
     private static string DotnetResourceLabels(ResourceProperties properties, bool includeRuntimeLabels)
     {
         string labels = $$"""
-                      "app.kubernetes.io/managed-by": "{{properties.ManagedBy}}"
+                      "app.kubernetes.io/managed-by": "{{LabelConstants.DotnetShift}}"
                     , "app.kubernetes.io/part-of": "{{properties.AppName}}"
                     , "app.kubernetes.io/name": "{{properties.DotnetAppName}}"
                     , "app.kubernetes.io/component": "{{properties.DotnetComponent}}"
@@ -642,7 +683,7 @@ sealed partial class DeployCommand : Command
         if (includeRuntimeLabels)
         {
             labels += $$"""
-                    , "app.openshift.io/runtime": "{{properties.DotnetRuntime}}"
+                    , "app.openshift.io/runtime": "{{LabelConstants.DotnetRuntime}}"
         """;
         }
 

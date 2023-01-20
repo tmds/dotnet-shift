@@ -4,10 +4,11 @@ sealed class DotnetShiftCommand : RootCommand
 {
     public DotnetShiftCommand()
     {
-        AddCommand(new LoginCommand());
-        AddCommand(new DeployCommand());
-        AddCommand(new ListCommand());
-        AddCommand(new DeleteCommand());
-        AddCommand(new NamespaceCommand());
+        Add(new LoginCommand());
+        Add(new DeployCommand());
+        Add(new ListCommand());
+        Add(new DeleteCommand());
+        Add(new NamespaceCommand());
+        Add(new SecretCommand());
     }
 }

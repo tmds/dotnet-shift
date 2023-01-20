@@ -6,9 +6,9 @@ sealed class LoginCommand : Command
 {
     public LoginCommand() : base("login", "Log in to a server")
     {
-        AddOption(ServerOption);
-        AddOption(TokenOption);
-        AddOption(InsecureSkipTlsVerifyOption);
+        Add(ServerOption);
+        Add(TokenOption);
+        Add(InsecureSkipTlsVerifyOption);
 
         this.SetHandler((string server, string token, bool skipVerify) => HandleAsync(server, token, skipVerify), ServerOption, TokenOption, InsecureSkipTlsVerifyOption);
     }
@@ -91,7 +91,7 @@ sealed class LoginCommand : Command
 
         List<Project> projects = await client.ListProjectsAsync();
 
-        Console.WriteLine($"Logged into '{server}' as 'userName' using the token provided.");
+        Console.WriteLine($"Logged into '{server}' as '{userName}' using the token provided.");
         Console.WriteLine();
 
         string ns;
