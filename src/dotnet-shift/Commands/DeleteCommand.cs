@@ -18,5 +18,5 @@ sealed class DeleteCommand : Command
     }
 
     public static readonly Argument<string> NameArgument =
-        new Argument<string>("NAME", "Name of the application to delete");
+        new Argument<string>("APP", "Name of the application to delete");
 }

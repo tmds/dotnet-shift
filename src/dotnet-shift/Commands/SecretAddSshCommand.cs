@@ -97,7 +97,7 @@ sealed class SecretAddSshCommand : Command
         new Option<string>(new[] { "--match-uri", }, "Wildcard uri used by BuildConfigs to select the secret for cloning. For example: '*://github.com/myorg/*'");
 
     public static readonly Option<string> KnownHostFileOption =
-        new Option<string>(new[] { "--known-host-file", }, FindDefaultKnownHosts, "A 'known_host' file that contains the server keys");
+        new Option<string>(new[] { "--known-hosts-file", }, FindDefaultKnownHosts, "A 'known_hosts' file that contains the server keys");
 
     public static readonly Option<string> TypeOption =
         new Option<string>(new[] { "--type", "-t" }, defaultValueFactory: () => "rsa", "Type of key to generate");
