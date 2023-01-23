@@ -24,7 +24,9 @@ partial class OpenShiftClient
             DeleteServicesAsync(selector),
             DeleteImageStreamsAsync(selector),
             DeleteBuildConfigsAsync(selector),
-            DeleteRoutesAsync(selector)
+            DeleteRoutesAsync(selector),
+            DeleteConfigMapsAsync(selector),
+            DeleteSecretsAsync(selector)
         };
 
         await Task.WhenAll(tasks);
@@ -75,6 +77,24 @@ partial class OpenShiftClient
             foreach (var item in list.Items)
             {
                 await _apiClient.DeleteRouteOpenshiftIoV1NamespacedRouteAsync(item.Metadata.Name, Namespace);
+            }
+        }
+
+        async Task DeleteConfigMapsAsync(string selector)
+        {
+            var list = await _apiClient.ListCoreV1NamespacedConfigMapAsync(Namespace, labelSelector: selector);
+            foreach (var item in list.Items)
+            {
+                await _apiClient.DeleteCoreV1NamespacedConfigMapAsync(item.Metadata.Name, Namespace);
+            }
+        }
+
+        async Task DeleteSecretsAsync(string selector)
+        {
+            var list = await _apiClient.ListCoreV1NamespacedSecretAsync(Namespace, labelSelector: selector);
+            foreach (var item in list.Items)
+            {
+                await _apiClient.DeleteCoreV1NamespacedSecretAsync(item.Metadata.Name, Namespace);
             }
         }
     }
@@ -159,6 +179,24 @@ partial class OpenShiftClient
                 }
             };
             await _apiClient.CreateImageOpenshiftIoV1NamespacedImageStreamAsync(imageStream, Namespace);
+            return true;
+        }
+    }
+
+    public async Task<bool> CreateConfigMapAsync(string configMap)
+    {
+        var body = JsonConvert.DeserializeObject<OpenShift.ConfigMap>(configMap);
+        try
+        {
+            string name = body.Metadata.Name;
+
+            await _apiClient.ReadCoreV1NamespacedConfigMapAsync(name, Namespace);
+
+            return false;
+        }
+        catch (Exception ex) when (IsResourceNotFound(ex))
+        {
+            await _apiClient.CreateCoreV1NamespacedConfigMapAsync(body, Namespace);
             return true;
         }
     }

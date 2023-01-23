@@ -209,6 +209,7 @@ sealed partial class DeployCommand : Command
         string imageStream = GenerateImageStream(props);
         // TODO: can we use the source-buildconfig for binary builds?
         string buildConfig = fromGit ? GenerateSourceBuildConfig(props, buildEnvironment) : GenerateBinaryBuildConfig(props);
+        string configMap = GenerateConfigMap(props);
         // TODO: add --expose option.
         string route = GenerateRoute(props);
 
@@ -232,6 +233,12 @@ sealed partial class DeployCommand : Command
             if (added)
             {
                 Console.WriteLine($"Added '{DotnetImageStreamName}:{props.DotnetVersion}' image stream tag");
+            }
+
+            added = await client.CreateConfigMapAsync(configMap);
+            if (added)
+            {
+                Console.WriteLine($"Create ConfigMap");
             }
 
             Console.WriteLine("Update DeploymentConfig");
@@ -276,6 +283,10 @@ sealed partial class DeployCommand : Command
                                "kind": "List",
                                "items": [
                            """);
+
+            content.Append(configMap);
+
+            content.Append(",");
             content.Append(deploymentConfig);
 
             content.Append(",");
@@ -388,6 +399,25 @@ sealed partial class DeployCommand : Command
         };
     }
 
+    private static string GenerateConfigMap(ResourceProperties properties)
+    {
+        return $$"""
+            {
+                "apiVersion": "v1",
+                "kind": "ConfigMap",
+                "metadata": {
+                    "name": "{{properties.DotnetAppName}}",
+                    "labels": {
+                        {{DotnetResourceLabels(properties, includeRuntimeLabels: false)}}
+                    },
+                },
+                "data": {
+                    "appsettings.json": "{\n}"
+                }
+            }
+        """;
+    }
+
     private static string GenerateDotnetImageStreamTag(ResourceProperties properties)
     {
         // note: we're setting a scheduled importPolicy so OpenShift will check
@@ -457,6 +487,14 @@ sealed partial class DeployCommand : Command
                         }
                     },
                     "spec": {
+                        "volumes": [
+                            {
+                                "name": "config-volume",
+                                "configMap": {
+                                    "name": "{{properties.DotnetAppName}}"
+                                }
+                            }
+                        ],
                         "containers": [
                             {
                                 "name": "{{ContainerName}}",
@@ -465,13 +503,19 @@ sealed partial class DeployCommand : Command
                                     "privileged": false
                                 },
                                 "ports": [
-                                {
-                                    "containerPort": 8080,
-                                    "name": "http",
-                                    "protocol": "TCP"
-                                }
+                                    {
+                                        "containerPort": 8080,
+                                        "name": "http",
+                                        "protocol": "TCP"
+                                    }
                                 ],
-                                "env": []
+                                "env": [],
+                                "volumeMounts": [
+                                    {
+                                        "name": "config-volume",
+                                        "mountPath": "/config"
+                                    }
+                                ]
                             }
                         ]
                     }
@@ -633,7 +677,6 @@ sealed partial class DeployCommand : Command
             "kind": "BuildConfig",
             "metadata": {
                 "labels": {
-
                     {{DotnetResourceLabels(properties, includeRuntimeLabels: true)}}
                 },
                 "name": "{{properties.DotnetBinaryBuildConfigName}}"
