@@ -33,29 +33,59 @@ sealed partial class DeployCommand : Command
         new Argument<string>("PROJECT", defaultValueFactory: () => ".", ".NET project to build");
 
     public static readonly Option<string> AsFileOption =
-        new Option<string>("--as-file", "Generates a JSON file with resources");
+        new Option<string>("--as-file", "Generates a JSON file with resources")
+    {
+        ArgumentHelpName = "FILE"
+    };
+
+    public static readonly Option<string> NameOption =
+        new Option<string>("--name", "Name the deployment")
+    {
+        ArgumentHelpName = "DEPLOYMENT"
+    };
+
+    public static readonly Option<string> PartOfOption =
+        new Option<string>("--part-of", "Add to application")
+    {
+        ArgumentHelpName = "APP"
+    };
 
     public static readonly Option<string> ContextOption =
-        new Option<string>(new[] { "--context" }, "Context directory for the image build");
+        new Option<string>(new[] { "--context" }, "Context directory for the image build")
+    {
+        ArgumentHelpName = "DIR"
+    };
 
     public static readonly Option<bool> FromGitOption =
-        new Option<bool>(new[] { "--from-git" }, "Build using the git repository")  { Arity = ArgumentArity.Zero };
+        new Option<bool>(new[] { "--from-git" }, "Build using the git repository")
+    {
+        Arity = ArgumentArity.Zero
+    };
 
     public static readonly Option<string> SourceSecretOption =
-        new Option<string>(new[] { "--source-secret" }, "Secret used for cloning the source code");
+        new Option<string>(new[] { "--source-secret" }, "Secret used for cloning the source code")
+    {
+        ArgumentHelpName = "SECRET"
+    };
 
     public DeployCommand() : base("deploy", "Deploys .NET application")
     {
         Add(ProjectArgument);
-        Add(AsFileOption);
+
         Add(ContextOption);
+        Add(NameOption);
+        Add(PartOfOption);
+
         Add(FromGitOption);
+
         Add(SourceSecretOption);
 
-        this.SetHandler((project, asFile, context, fromGit, sourceSecret) => HandleAsync(project, asFile, context, fromGit, sourceSecret), ProjectArgument, AsFileOption, ContextOption, FromGitOption, SourceSecretOption);
+        Add(AsFileOption);
+
+        this.SetHandler((project, asFile, context, fromGit, sourceSecret, name, partOf) => HandleAsync(project, asFile, context, fromGit, sourceSecret, name, partOf), ProjectArgument, AsFileOption, ContextOption, FromGitOption, SourceSecretOption, NameOption, PartOfOption);
     }
 
-    public static async Task<int> HandleAsync(string project, string? asFile, string? context, bool fromGit, string? sourceSecret)
+    public static async Task<int> HandleAsync(string project, string? asFile, string? context, bool fromGit, string? sourceSecret, string? name, string? partOf)
     {
         if (!fromGit)
         {
@@ -185,14 +215,22 @@ sealed partial class DeployCommand : Command
         }
 
         // Generate resource definitions.
-        string name = projectInformation.AssemblyName;
-        // a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character
-        name = name.Replace(".", "-").ToLowerInvariant();
+        if (name is null)
+        {
+            name = projectInformation.AssemblyName;
+            // a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character
+            name = name.Replace(".", "-").ToLowerInvariant();
+        }
+        if (partOf is null)
+        {
+            partOf = name;
+        }
+
         string s2iImage = GetS2iImage(projectInformation.DotnetVersion);
         var props = new ResourceProperties()
         {
-            AppName = name,
-            Instance = name,
+            AppName = partOf,
+            Instance = partOf,
 
             DotnetAppName = name,
             DotnetComponent = name,
@@ -319,6 +357,11 @@ sealed partial class DeployCommand : Command
 
     private static (string? gitUri, string? gitRef) DetermineGitRemote(string root)
     {
+        if (!Directory.Exists(Path.Combine(root, ".git")))
+        {
+            return (null, null);
+        }
+
         var gitRepo = new Repository(root);
 
         Branch? remoteBranch = gitRepo.Head?.TrackedBranch;
