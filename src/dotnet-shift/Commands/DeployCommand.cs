@@ -22,8 +22,8 @@ sealed partial class DeployCommand : Command
         public required string DotnetComponent { get; init; }
         public required string? DotnetSourceSecret { get; init; }
 
-        public string DotnetAppGitUri { get; init; } = "";
-        public string DotnetAppGitRef { get; init; } = "";
+        public string? DotnetAppGitUri { get; init; }
+        public string? DotnetAppGitRef { get; init; }
 
         public string DotnetAppImageName => DotnetAppName;
         public string DotnetBinaryBuildConfigName => $"{DotnetAppName}-binary";
@@ -107,26 +107,19 @@ sealed partial class DeployCommand : Command
             // Guess what would be an appropriate context directory.
             // Move up directory by directory until we reach a directory that has a *.sln file, or a .git subdirectory.
             string projectFileDirectory = Path.GetDirectoryName(projectFile)!;
-            string parentDir = projectFileDirectory;
-            do
-            {
-                if (Directory.Exists(Path.Combine(parentDir, ".git")) ||
-                    (Directory.GetFiles(parentDir, "*.sln").Length > 0 && !fromGit))
-                {
-                    contextDir = parentDir;
-                    break;
-                }
-                parentDir = Path.GetDirectoryName(parentDir)!;
-                if (parentDir == Path.GetPathRoot(parentDir))
-                {
-                    break;
-                }
-            } while (true);
 
+            // Move up directory by directory util we we have a .git subdirectory.
+            contextDir = FindParentDir(projectFileDirectory, parentDir => Directory.Exists(Path.Combine(parentDir, ".git")));
             if (fromGit && contextDir is null)
             {
                 Console.Error.WriteLine($"The specified project must be part of a git repository when using --from-git.");
                 return 1;
+            }
+
+            if (contextDir is null)
+            {
+                // Move up directory by directory util we we have a *.sln file.
+                contextDir = FindParentDir(projectFileDirectory, parentDir => Directory.GetFiles(parentDir, "*.sln").Length > 0);
             }
 
             // Avoid using '/tmp' and '~' as guesses.
@@ -178,32 +171,15 @@ sealed partial class DeployCommand : Command
             return 1;
         }
 
-        string gitUri = "";
-        string gitRef = "";
+        (string? gitUri, string? gitRef) = DetermineGitRemote(contextDir);
+
         if (fromGit)
         {
-            var gitRepo = new Repository(contextDir);
-
-            Branch? remoteBranch = gitRepo.Head?.TrackedBranch;
-            if (remoteBranch is null)
+            if (gitUri is null || gitRef is null)
             {
-                Console.Error.WriteLine($"The git repository is not tracking a remote branch.");
+                Console.Error.WriteLine($"Cannot determine remote branch to build.");
                 return 1;
             }
-
-            // determine gitUri
-            string remoteName = remoteBranch.RemoteName;
-            Remote remote = gitRepo.Network.Remotes.First(r => r.Name == remoteName);
-            gitUri = remote.Url;
-
-            // determine gitRef
-            string canonicalBranchName = remoteBranch.UpstreamBranchCanonicalName;
-            if (!canonicalBranchName.StartsWith("refs/heads/"))
-            {
-                Console.Error.WriteLine($"Cannot determine remote branch name from '{canonicalBranchName}'.");
-                return 1;
-            }
-            gitRef = canonicalBranchName.Substring("refs/heads/".Length);
 
             Console.WriteLine($"Application will be built from {gitUri}#{gitRef}");
         }
@@ -228,7 +204,7 @@ sealed partial class DeployCommand : Command
         };
 
         string dotnetImageStreamTag = GenerateDotnetImageStreamTag(props);
-        string deploymentConfig = GenerateDeploymentConfig(props);
+        string deploymentConfig = GenerateDeploymentConfig(props, includeGitAnnotations: true);
         string service = GenerateService(props);
         string imageStream = GenerateImageStream(props);
         // TODO: can we use the source-buildconfig for binary builds?
@@ -324,6 +300,49 @@ sealed partial class DeployCommand : Command
         return 0;
     }
 
+    private static string? FindParentDir(string projectFileDirectory, Func<string, bool> predicate)
+    {
+        string parentDir = projectFileDirectory;
+        do
+        {
+            if (predicate(parentDir))
+            {
+                return parentDir;
+            }
+            parentDir = Path.GetDirectoryName(parentDir)!;
+            if (parentDir == Path.GetPathRoot(parentDir))
+            {
+                return null;
+            }
+        } while (true);
+    }
+
+    private static (string? gitUri, string? gitRef) DetermineGitRemote(string root)
+    {
+        var gitRepo = new Repository(root);
+
+        Branch? remoteBranch = gitRepo.Head?.TrackedBranch;
+        if (remoteBranch is null)
+        {
+            return (null, null);
+        }
+
+        // determine gitUri
+        string remoteName = remoteBranch.RemoteName;
+        Remote remote = gitRepo.Network.Remotes.First(r => r.Name == remoteName);
+        string gitUri = remote.Url;
+
+        // determine gitRef
+        string canonicalBranchName = remoteBranch.UpstreamBranchCanonicalName;
+        if (!canonicalBranchName.StartsWith("refs/heads/"))
+        {
+            return (null, null);
+        }
+        string gitRef = canonicalBranchName.Substring("refs/heads/".Length);
+
+        return (gitUri, gitRef);
+    }
+
     private static string JsonTryToPrettify(string json)
     {
         try
@@ -393,7 +412,7 @@ sealed partial class DeployCommand : Command
         """;
     }
 
-    private static string GenerateDeploymentConfig(ResourceProperties properties)
+    private static string GenerateDeploymentConfig(ResourceProperties properties, bool includeGitAnnotations)
     {
         return $$"""
         {
@@ -401,6 +420,9 @@ sealed partial class DeployCommand : Command
             "kind": "DeploymentConfig",
             "metadata": {
                 "name": "{{properties.DotnetAppName}}",
+                "annotations": {
+                    {{DotnetAnnotations(properties, includeGitAnnotations)}}
+                },
                 "labels": {
                     {{DotnetResourceLabels(properties, includeRuntimeLabels: true)}}
                 }
@@ -528,9 +550,6 @@ sealed partial class DeployCommand : Command
                         "name": "{{properties.DotnetAppImageName}}:latest"
                     }
                 },
-                "source": {
-                    "type": "Binary"
-                },
                 "strategy": {
                     "sourceStrategy": {
                         "from": {
@@ -546,8 +565,8 @@ sealed partial class DeployCommand : Command
                 "source": {
                     "type": "Git",
                     "git": {
-                        "uri": "{{properties.DotnetAppGitUri}}",
-                        "ref": "{{properties.DotnetAppGitRef}}"
+                        "uri": "{{properties.DotnetAppGitUri!}}",
+                        "ref": "{{properties.DotnetAppGitRef!}}"
                     }
                     {{GenerateSourceSecretSection(properties.DotnetSourceSecret)}}
                 },
@@ -688,6 +707,21 @@ sealed partial class DeployCommand : Command
         }
 
         return labels;
+    }
+
+    private static string DotnetAnnotations(ResourceProperties properties, bool includeGitAnnotations)
+    {
+        string annotations = "";
+
+        if (includeGitAnnotations && (properties.DotnetAppGitRef is not null && properties.DotnetAppGitUri is not null))
+        {
+            annotations += $$"""
+                    "app.openshift.io/vcs-ref": "{{properties.DotnetAppGitRef}}",
+                    "app.openshift.io/vcs-uri": "{{properties.DotnetAppGitUri}}"
+        """;
+        }
+
+        return annotations;
     }
 
     private static string DotnetContainerLabels(ResourceProperties properties, bool isSelector)
