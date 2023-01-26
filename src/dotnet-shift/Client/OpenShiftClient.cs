@@ -35,6 +35,10 @@ partial class OpenShiftClient
                 // OpenShift needs to know what the content really is.
                 request.Content.Headers.ContentType.MediaType = "application/json";
             }
+            if (request.Method == HttpMethod.Patch)
+            {
+                request.Content.Headers.ContentType.MediaType = "application/strategic-merge-patch+json";
+            }
             return base.SendAsync(request, cancellationToken);
         }
 
