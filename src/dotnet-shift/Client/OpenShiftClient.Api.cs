@@ -222,6 +222,20 @@ partial class OpenShiftClient
         await _apiClient.CreateCoreV1NamespacedSecretAsync(body, Namespace);
     }
 
+    public async Task<bool> TryCreateSecretAsync(string secret)
+    {
+        var body = JsonConvert.DeserializeObject<OpenShift.Secret>(secret);
+        try
+        {
+            await _apiClient.CreateCoreV1NamespacedSecretAsync(body, Namespace);
+            return true;
+        }
+        catch (Exception ex) when (IsResourceExists(ex))
+        {
+            return false;
+        } 
+    }
+
     public async Task<bool> ExistsSecretAsync(string secret)
     {
         try
@@ -263,13 +277,16 @@ partial class OpenShiftClient
         }
         catch (Exception ex) when (IsResourceExists(ex))
         {
-            // TODO: update instead of deleting ...
-            // Delete and re-create.
             string name = body.Metadata.Name;
-            await _apiClient.DeleteBuildOpenshiftIoV1NamespacedBuildConfigAsync(name, Namespace);
 
-            await _apiClient.CreateBuildOpenshiftIoV1NamespacedBuildConfigAsync(body, Namespace);
+            await _apiClient.PatchBuildOpenshiftIoV1NamespacedBuildConfigAsync(OpenShift.Patch.CreateFrom(body), name, Namespace);
         }
+    }
+
+    public async Task<OpenShift.BuildConfig> PatchBuildConfigAsync(string name, string patch)
+    {
+        var body = JsonConvert.DeserializeObject<OpenShift.BuildConfig>(patch);
+        return await _apiClient.PatchBuildOpenshiftIoV1NamespacedBuildConfigAsync(OpenShift.Patch.CreateFrom(body), name, Namespace);
     }
 
     public async Task ApplyRouteAsync(string route)
