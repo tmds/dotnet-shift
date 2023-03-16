@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 
-record AppServices
+sealed class AppServices
 {
     public string WorkingDirectory { get; }
     public ILogger Logger { get; }

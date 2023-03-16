@@ -5,16 +5,19 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task<BuildConfig?> GetBuildConfigAsync(string name, CancellationToken cancellationToken)
         => ReadBuildOpenshiftIoV1NamespacedBuildConfigAsync(name, Namespace, cancellationToken: cancellationToken);
 
-    public System.Threading.Tasks.Task CreateBuildConfigAsync(BuildConfig buildConfig, CancellationToken cancellationToken)
+    public Task CreateBuildConfigAsync(BuildConfig buildConfig, CancellationToken cancellationToken)
         => CreateBuildOpenshiftIoV1NamespacedBuildConfigAsync(buildConfig, Namespace, cancellationToken: cancellationToken);
 
-    public System.Threading.Tasks.Task PatchBuildConfigAsync(BuildConfig buildConfig, CancellationToken cancellationToken)
+    public Task PatchBuildConfigAsync(BuildConfig buildConfig, CancellationToken cancellationToken)
         => PatchBuildOpenshiftIoV1NamespacedBuildConfigAsync(buildConfig, buildConfig.Metadata.Name, Namespace, cancellationToken: cancellationToken);
 
     public Task<BuildConfigList> ListBuildConfigsAsync(string labelSelector, CancellationToken cancellationToken)
         => ListBuildOpenshiftIoV1NamespacedBuildConfigAsync(Namespace, labelSelector: labelSelector, cancellationToken: cancellationToken);
 
-    private async System.Threading.Tasks.Task<BuildConfig?> ReadBuildOpenshiftIoV1NamespacedBuildConfigAsync(string name, string @namespace, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    public Task DeleteBuildConfigAsync(string name, CancellationToken cancellationToken)
+        => DeleteBuildOpenshiftIoV1NamespacedBuildConfigAsync(name, Namespace, cancellationToken: cancellationToken);
+
+    private async Task<BuildConfig?> ReadBuildOpenshiftIoV1NamespacedBuildConfigAsync(string name, string @namespace, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
             throw new System.ArgumentNullException("name");
@@ -101,7 +104,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<BuildConfig> CreateBuildOpenshiftIoV1NamespacedBuildConfigAsync(BuildConfig body, string @namespace, string? dryRun = null, string? fieldManager = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<BuildConfig> CreateBuildOpenshiftIoV1NamespacedBuildConfigAsync(BuildConfig body, string @namespace, string? dryRun = null, string? fieldManager = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (@namespace == null)
             throw new System.ArgumentNullException("@namespace");
@@ -215,7 +218,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<Status> DeleteBuildOpenshiftIoV1NamespacedBuildConfigAsync(string name, string @namespace, DeleteOptions? body = null, string? dryRun = null, int? gracePeriodSeconds = null, bool? orphanDependents = null, string? propagationPolicy = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<Status> DeleteBuildOpenshiftIoV1NamespacedBuildConfigAsync(string name, string @namespace, DeleteOptions? body = null, string? dryRun = null, int? gracePeriodSeconds = null, bool? orphanDependents = null, string? propagationPolicy = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
             throw new System.ArgumentNullException("name");
@@ -328,7 +331,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<BuildConfig> PatchBuildOpenshiftIoV1NamespacedBuildConfigAsync(BuildConfig body, string name, string @namespace, string? dryRun = null, string? fieldManager = null, bool? force = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<BuildConfig> PatchBuildOpenshiftIoV1NamespacedBuildConfigAsync(BuildConfig body, string name, string @namespace, string? dryRun = null, string? fieldManager = null, bool? force = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
             throw new System.ArgumentNullException("name");
@@ -440,7 +443,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<BuildConfigList> ListBuildOpenshiftIoV1NamespacedBuildConfigAsync(string @namespace, bool? allowWatchBookmarks = null, string? @continue = null, string? fieldSelector = null, string? labelSelector = null, int? limit = null, string? resourceVersion = null, string? resourceVersionMatch = null, int? timeoutSeconds = null, bool? watch = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<BuildConfigList> ListBuildOpenshiftIoV1NamespacedBuildConfigAsync(string @namespace, bool? allowWatchBookmarks = null, string? @continue = null, string? fieldSelector = null, string? labelSelector = null, int? limit = null, string? resourceVersion = null, string? resourceVersionMatch = null, int? timeoutSeconds = null, bool? watch = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (@namespace == null)
             throw new System.ArgumentNullException("@namespace");

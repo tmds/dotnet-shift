@@ -5,7 +5,7 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task<ProjectList> ListProjectsAsync(CancellationToken cancellationToken)
         => ListProjectOpenshiftIoV1ProjectAsync(cancellationToken: cancellationToken);
 
-    private async System.Threading.Tasks.Task<ProjectList> ListProjectOpenshiftIoV1ProjectAsync(bool? allowWatchBookmarks = null, string? @continue = null, string? fieldSelector = null, string? labelSelector = null, int? limit = null, string? resourceVersion = null, string? resourceVersionMatch = null, int? timeoutSeconds = null, bool? watch = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<ProjectList> ListProjectOpenshiftIoV1ProjectAsync(bool? allowWatchBookmarks = null, string? @continue = null, string? fieldSelector = null, string? labelSelector = null, int? limit = null, string? resourceVersion = null, string? resourceVersionMatch = null, int? timeoutSeconds = null, bool? watch = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         var urlBuilder_ = new System.Text.StringBuilder();
         urlBuilder_.Append(BaseUrl != null ? BaseUrl.TrimEnd('/') : "").Append("/apis/project.openshift.io/v1/projects?");

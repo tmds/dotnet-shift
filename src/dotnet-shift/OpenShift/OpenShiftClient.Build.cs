@@ -10,7 +10,7 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task<Stream> FollowBuildLogAsync(string build, CancellationToken cancellationToken)
         => ReadBuildOpenshiftIoV1NamespacedBuildLogAsync(build, Namespace, follow: true, cancellationToken: cancellationToken);
 
-    public virtual async System.Threading.Tasks.Task<Build> ConnectBuildOpenshiftIoV1PostNamespacedBuildConfigInstantiatebinaryAsync(string name, string @namespace, HttpContent content, string? asFile = null, string? revision_authorEmail = null, string? revision_authorName = null, string? revision_commit = null, string? revision_committerEmail = null, string? revision_committerName = null, string? revision_message = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<Build> ConnectBuildOpenshiftIoV1PostNamespacedBuildConfigInstantiatebinaryAsync(string name, string @namespace, HttpContent content, string? asFile = null, string? revision_authorEmail = null, string? revision_authorName = null, string? revision_commit = null, string? revision_committerEmail = null, string? revision_committerName = null, string? revision_message = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
             throw new System.ArgumentNullException("name");
@@ -118,7 +118,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    public virtual async System.Threading.Tasks.Task<Stream> ReadBuildOpenshiftIoV1NamespacedBuildLogAsync(string name, string @namespace, string? container = null, bool? follow = null, bool? insecureSkipTLSVerifyBackend = null, int? limitBytes = null, bool? nowait = null, string? pretty = null, bool? previous = null, int? sinceSeconds = null, int? tailLines = null, bool? timestamps = null, int? version = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<Stream> ReadBuildOpenshiftIoV1NamespacedBuildLogAsync(string name, string @namespace, string? container = null, bool? follow = null, bool? insecureSkipTLSVerifyBackend = null, int? limitBytes = null, bool? nowait = null, string? pretty = null, bool? previous = null, int? sinceSeconds = null, int? tailLines = null, bool? timestamps = null, int? version = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
             throw new System.ArgumentNullException("name");
