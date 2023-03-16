@@ -120,7 +120,7 @@ partial class OpenShiftClient : IOpenShiftClient
 
     public bool ReadResponseAsString { get; set; }
 
-    private async System.Threading.Tasks.Task<ObjectResponseResult<T>> ReadObjectResponseAsync<T>(System.Net.Http.HttpResponseMessage response, System.Collections.Generic.IReadOnlyDictionary<string, System.Collections.Generic.IEnumerable<string>> headers, System.Threading.CancellationToken cancellationToken)
+    private async Task<ObjectResponseResult<T>> ReadObjectResponseAsync<T>(System.Net.Http.HttpResponseMessage response, System.Collections.Generic.IReadOnlyDictionary<string, System.Collections.Generic.IEnumerable<string>> headers, System.Threading.CancellationToken cancellationToken)
     {
         if (response == null || response.Content == null)
         {
@@ -161,14 +161,6 @@ partial class OpenShiftClient : IOpenShiftClient
             }
         }
     }
-
-
-
-
-
-
-
-
 
     struct ObjectResponseResult<T>
     {

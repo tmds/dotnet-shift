@@ -6,13 +6,19 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task<Service?> GetServiceAsync(string name, CancellationToken cancellationToken)
         => ReadCoreV1NamespacedServiceAsync(name, Namespace, cancellationToken: cancellationToken);
 
-    public System.Threading.Tasks.Task CreateServiceAsync(Service service, CancellationToken cancellationToken)
+    public Task CreateServiceAsync(Service service, CancellationToken cancellationToken)
         => CreateCoreV1NamespacedServiceAsync(service, Namespace, cancellationToken: cancellationToken);
 
-    public System.Threading.Tasks.Task PatchServiceAsync(Service service, CancellationToken cancellationToken)
+    public Task PatchServiceAsync(Service service, CancellationToken cancellationToken)
         => PatchCoreV1NamespacedServiceAsync(service, service.Metadata.Name, Namespace, cancellationToken: cancellationToken);
 
-    private async System.Threading.Tasks.Task<Service?> ReadCoreV1NamespacedServiceAsync(string name, string @namespace, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    public Task<ServiceList> ListServicesAsync(string labelSelector, CancellationToken cancellationToken)
+        => ListCoreV1NamespacedServiceAsync(Namespace, labelSelector: labelSelector, cancellationToken: cancellationToken);
+
+    public Task DeleteServiceAsync(string name, CancellationToken cancellationToken)
+        => DeleteCoreV1NamespacedServiceAsync(name, Namespace, cancellationToken: cancellationToken);
+
+    private async Task<Service?> ReadCoreV1NamespacedServiceAsync(string name, string @namespace, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
             throw new System.ArgumentNullException("name");
@@ -99,7 +105,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<Service> CreateCoreV1NamespacedServiceAsync(Service body, string @namespace, string? dryRun = null, string? fieldManager = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<Service> CreateCoreV1NamespacedServiceAsync(Service body, string @namespace, string? dryRun = null, string? fieldManager = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (@namespace == null)
             throw new System.ArgumentNullException("@namespace");
@@ -213,7 +219,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<Service> DeleteCoreV1NamespacedServiceAsync(string name, string @namespace, DeleteOptions? body = null, string? dryRun = null, int? gracePeriodSeconds = null, bool? orphanDependents = null, string? propagationPolicy = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<Service> DeleteCoreV1NamespacedServiceAsync(string name, string @namespace, DeleteOptions? body = null, string? dryRun = null, int? gracePeriodSeconds = null, bool? orphanDependents = null, string? propagationPolicy = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
             throw new System.ArgumentNullException("name");
@@ -326,7 +332,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<Service> PatchCoreV1NamespacedServiceAsync(Service body, string name, string @namespace, string? dryRun = null, string? fieldManager = null, bool? force = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<Service> PatchCoreV1NamespacedServiceAsync(Service body, string name, string @namespace, string? dryRun = null, string? fieldManager = null, bool? force = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
             throw new System.ArgumentNullException("name");
@@ -438,7 +444,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<ServiceList2> ListCoreV1NamespacedServiceAsync(string @namespace, bool? allowWatchBookmarks = null, string? @continue = null, string? fieldSelector = null, string? labelSelector = null, int? limit = null, string? resourceVersion = null, string? resourceVersionMatch = null, int? timeoutSeconds = null, bool? watch = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<ServiceList> ListCoreV1NamespacedServiceAsync(string @namespace, bool? allowWatchBookmarks = null, string? @continue = null, string? fieldSelector = null, string? labelSelector = null, int? limit = null, string? resourceVersion = null, string? resourceVersionMatch = null, int? timeoutSeconds = null, bool? watch = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (@namespace == null)
             throw new System.ArgumentNullException("@namespace");
@@ -520,7 +526,7 @@ partial class OpenShiftClient : IOpenShiftClient
                     var status_ = (int)response_.StatusCode;
                     if (status_ == 200)
                     {
-                        var objectResponse_ = await ReadObjectResponseAsync<ServiceList2>(response_, headers_, cancellationToken).ConfigureAwait(false);
+                        var objectResponse_ = await ReadObjectResponseAsync<ServiceList>(response_, headers_, cancellationToken).ConfigureAwait(false);
                         if (objectResponse_.Object == null)
                         {
                             throw new ApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);

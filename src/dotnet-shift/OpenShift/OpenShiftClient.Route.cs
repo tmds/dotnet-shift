@@ -5,13 +5,19 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task<Route?> GetRouteAsync(string name, CancellationToken cancellationToken)
         => ReadRouteOpenshiftIoV1NamespacedRouteAsync(name, Namespace, cancellationToken: cancellationToken);
 
-    public System.Threading.Tasks.Task CreateRouteAsync(Route route, CancellationToken cancellationToken)
+    public Task CreateRouteAsync(Route route, CancellationToken cancellationToken)
         => CreateRouteOpenshiftIoV1NamespacedRouteAsync(route, Namespace, cancellationToken: cancellationToken);
 
-    public System.Threading.Tasks.Task PatchRouteAsync(Route route, CancellationToken cancellationToken)
+    public Task PatchRouteAsync(Route route, CancellationToken cancellationToken)
         => PatchRouteOpenshiftIoV1NamespacedRouteAsync(route, route.Metadata.Name, Namespace, cancellationToken: cancellationToken);
 
-    private async System.Threading.Tasks.Task<Route?> ReadRouteOpenshiftIoV1NamespacedRouteAsync(string name, string @namespace, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    public Task<RouteList> ListRoutesAsync(string labelSelector, CancellationToken cancellationToken)
+        => ListRouteOpenshiftIoV1NamespacedRouteAsync(Namespace, labelSelector: labelSelector, cancellationToken: cancellationToken);
+
+    public Task DeleteRouteAsync(string name, CancellationToken cancellationToken)
+        => DeleteRouteOpenshiftIoV1NamespacedRouteAsync(name, Namespace, cancellationToken: cancellationToken);
+
+    private async Task<Route?> ReadRouteOpenshiftIoV1NamespacedRouteAsync(string name, string @namespace, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
             throw new System.ArgumentNullException("name");
@@ -98,7 +104,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<Route> CreateRouteOpenshiftIoV1NamespacedRouteAsync(Route body, string @namespace, string? dryRun = null, string? fieldManager = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<Route> CreateRouteOpenshiftIoV1NamespacedRouteAsync(Route body, string @namespace, string? dryRun = null, string? fieldManager = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (@namespace == null)
             throw new System.ArgumentNullException("@namespace");
@@ -212,7 +218,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<Status> DeleteRouteOpenshiftIoV1NamespacedRouteAsync(string name, string @namespace, DeleteOptions? body = null, string? dryRun = null, int? gracePeriodSeconds = null, bool? orphanDependents = null, string? propagationPolicy = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<Status> DeleteRouteOpenshiftIoV1NamespacedRouteAsync(string name, string @namespace, DeleteOptions? body = null, string? dryRun = null, int? gracePeriodSeconds = null, bool? orphanDependents = null, string? propagationPolicy = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
             throw new System.ArgumentNullException("name");
@@ -325,7 +331,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<Route> PatchRouteOpenshiftIoV1NamespacedRouteAsync(Route body, string name, string @namespace, string? dryRun = null, string? fieldManager = null, bool? force = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<Route> PatchRouteOpenshiftIoV1NamespacedRouteAsync(Route body, string name, string @namespace, string? dryRun = null, string? fieldManager = null, bool? force = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
             throw new System.ArgumentNullException("name");
@@ -437,7 +443,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<RouteList> ListRouteOpenshiftIoV1NamespacedRouteAsync(string @namespace, bool? allowWatchBookmarks = null, string? @continue = null, string? fieldSelector = null, string? labelSelector = null, int? limit = null, string? resourceVersion = null, string? resourceVersionMatch = null, int? timeoutSeconds = null, bool? watch = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<RouteList> ListRouteOpenshiftIoV1NamespacedRouteAsync(string @namespace, bool? allowWatchBookmarks = null, string? @continue = null, string? fieldSelector = null, string? labelSelector = null, int? limit = null, string? resourceVersion = null, string? resourceVersionMatch = null, int? timeoutSeconds = null, bool? watch = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (@namespace == null)
             throw new System.ArgumentNullException("@namespace");

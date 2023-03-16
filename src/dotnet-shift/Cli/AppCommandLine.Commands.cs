@@ -212,8 +212,6 @@ partial class AppCommandLine
         return command;
     }
 
-
-
     static async Task<int> GetLoginContext(AppContext ctx, Handler next, CancellationToken cancellatinToken)
     {
         var services = ctx.Services;

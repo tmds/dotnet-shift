@@ -1,6 +1,6 @@
 # dotnet shift
 
-An opioninated .NET cli tool for .NET developers for working with OpenShift.
+An opinionated .NET cli tool for working with OpenShift.
 
 # Usage
 
@@ -9,7 +9,7 @@ Install .NET 6 or .NET 7 using the instructions at https://learn.microsoft.com/e
 Install the tool:
 
 ```
-$ dotnet tool install -g dotnet-shift --prerelease --add-source https://www.myget.org/F/tmds/api/v3/index.json
+$ dotnet tool update -g dotnet-shift --prerelease --add-source https://www.myget.org/F/tmds/api/v3/index.json
 ```
 
 Create an app:

@@ -5,7 +5,7 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task<User> GetUserAsync(CancellationToken cancellationToken)
         => ReadUserAsync("~", pretty: null, cancellationToken);
 
-    private async System.Threading.Tasks.Task<User> ReadUserAsync(string name, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<User> ReadUserAsync(string name, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
             throw new System.ArgumentNullException("name");

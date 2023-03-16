@@ -5,13 +5,19 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task<ImageStream?> GetImageStreamAsync(string name, CancellationToken cancellationToken)
         => ReadImageOpenshiftIoV1NamespacedImageStreamAsync(name, Namespace, cancellationToken: cancellationToken);
 
-    public System.Threading.Tasks.Task CreateImageStreamAsync(ImageStream imageStream, CancellationToken cancellationToken)
+    public Task CreateImageStreamAsync(ImageStream imageStream, CancellationToken cancellationToken)
         => CreateImageOpenshiftIoV1NamespacedImageStreamAsync(imageStream, Namespace, cancellationToken: cancellationToken);
 
-    public System.Threading.Tasks.Task PatchImageStreamAsync(ImageStream imageStream, CancellationToken cancellationToken)
+    public Task PatchImageStreamAsync(ImageStream imageStream, CancellationToken cancellationToken)
         => PatchImageOpenshiftIoV1NamespacedImageStreamAsync(imageStream, imageStream.Metadata.Name, Namespace, cancellationToken: cancellationToken);
 
-    private async System.Threading.Tasks.Task<ImageStream?> ReadImageOpenshiftIoV1NamespacedImageStreamAsync(string name, string @namespace, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    public Task<ImageStreamList> ListImageStreamsAsync(string labelSelector, CancellationToken cancellationToken)
+        => ListImageOpenshiftIoV1NamespacedImageStreamAsync(Namespace, labelSelector: labelSelector, cancellationToken: cancellationToken);
+
+    public Task DeleteImageStreamAsync(string name, CancellationToken cancellationToken)
+        => DeleteImageOpenshiftIoV1NamespacedImageStreamAsync(name, Namespace, cancellationToken: cancellationToken);
+
+    private async Task<ImageStream?> ReadImageOpenshiftIoV1NamespacedImageStreamAsync(string name, string @namespace, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
             throw new System.ArgumentNullException("name");
@@ -98,7 +104,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<ImageStream> CreateImageOpenshiftIoV1NamespacedImageStreamAsync(ImageStream body, string @namespace, string? dryRun = null, string? fieldManager = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<ImageStream> CreateImageOpenshiftIoV1NamespacedImageStreamAsync(ImageStream body, string @namespace, string? dryRun = null, string? fieldManager = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (@namespace == null)
             throw new System.ArgumentNullException("@namespace");
@@ -212,7 +218,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<Status> DeleteImageOpenshiftIoV1NamespacedImageStreamAsync(string name, string @namespace, DeleteOptions? body = null, string? dryRun = null, int? gracePeriodSeconds = null, bool? orphanDependents = null, string? propagationPolicy = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<Status> DeleteImageOpenshiftIoV1NamespacedImageStreamAsync(string name, string @namespace, DeleteOptions? body = null, string? dryRun = null, int? gracePeriodSeconds = null, bool? orphanDependents = null, string? propagationPolicy = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
             throw new System.ArgumentNullException("name");
@@ -325,7 +331,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<ImageStream> PatchImageOpenshiftIoV1NamespacedImageStreamAsync(ImageStream body, string name, string @namespace, string? dryRun = null, string? fieldManager = null, bool? force = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<ImageStream> PatchImageOpenshiftIoV1NamespacedImageStreamAsync(ImageStream body, string name, string @namespace, string? dryRun = null, string? fieldManager = null, bool? force = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
             throw new System.ArgumentNullException("name");
@@ -437,7 +443,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<ImageStreamList> ListImageOpenshiftIoV1NamespacedImageStreamAsync(string @namespace, bool? allowWatchBookmarks = null, string? @continue = null, string? fieldSelector = null, string? labelSelector = null, int? limit = null, string? resourceVersion = null, string? resourceVersionMatch = null, int? timeoutSeconds = null, bool? watch = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async Task<ImageStreamList> ListImageOpenshiftIoV1NamespacedImageStreamAsync(string @namespace, bool? allowWatchBookmarks = null, string? @continue = null, string? fieldSelector = null, string? labelSelector = null, int? limit = null, string? resourceVersion = null, string? resourceVersionMatch = null, int? timeoutSeconds = null, bool? watch = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (@namespace == null)
             throw new System.ArgumentNullException("@namespace");
