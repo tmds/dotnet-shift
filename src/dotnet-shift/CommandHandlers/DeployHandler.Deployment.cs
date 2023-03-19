@@ -1,5 +1,6 @@
 namespace CommandHandlers;
 
+using Newtonsoft.Json;
 using OpenShift;
 
 sealed partial class DeployHandler
@@ -7,46 +8,48 @@ sealed partial class DeployHandler
     private const string ContainerName = "app";
     private const string AppConfigMountPath = "/config";
 
-    private async Task ApplyAppDeploymentConfig(
+    private async Task ApplyAppDeployment(
         IOpenShiftClient client,
         string name,
-        DeploymentConfig? current,
+        Deployment? current,
         string imageStreamTagName,
-        Dictionary<string, string> annotations,
+        string? gitUri, string? gitRef,
         Dictionary<string, string> labels,
         Dictionary<string, string> selectorLabels,
         CancellationToken cancellationToken)
     {
-        DeploymentConfig deploymentConfig = CreateAppDeploymentConfig(
+        Deployment deployment = CreateAppDeployment(
             name,
             current,
             imageStreamTagName,
-            annotations,
+            gitUri, gitRef,
             labels,
             selectorLabels);
 
         if (current is null)
         {
-            await client.CreateDeploymentConfigAsync(deploymentConfig, cancellationToken);
+            await client.CreateDeploymentAsync(deployment, cancellationToken);
         }
         else
         {
-            await client.PatchDeploymentConfigAsync(deploymentConfig, cancellationToken);
+            await client.PatchDeploymentAsync(deployment, cancellationToken);
         }
     }
 
-    private static DeploymentConfig CreateAppDeploymentConfig(
+    private static Deployment CreateAppDeployment(
         string name,
-        DeploymentConfig? current,
+        Deployment? current,
         string imageStreamTagName,
-        Dictionary<string, string> annotations,
+        string? gitUri, string? gitRef,
         Dictionary<string, string> labels,
         Dictionary<string, string> selectorLabels)
     {
-        return new DeploymentConfig()
+        Dictionary<string, string> annotations = GetAppDeploymentAnnotations(imageStreamTagName, gitUri, gitRef);
+
+        return new Deployment()
         {
-            ApiVersion = "apps.openshift.io/v1",
-            Kind = "DeploymentConfig",
+            ApiVersion = "apps/v1",
+            Kind = "Deployment",
             Metadata = new()
             {
                 Name = name,
@@ -56,32 +59,9 @@ sealed partial class DeployHandler
             Spec = new()
             {
                 Replicas = current?.Spec?.Replicas ?? 1,
-                Selector = selectorLabels,
-                Triggers = new()
+                Selector = new()
                 {
-                    // Trigger a deployment when the configuration changes.
-                    new()
-                    {
-                        Type = "ConfigChange"
-                    },
-                    // Trigger a deployment when the application image changes.
-                    new()
-                    {
-                        Type = "ImageChange",
-                        ImageChangeParams = new()
-                        {
-                            Automatic = true,
-                            ContainerNames = new()
-                            {
-                                ContainerName
-                            },
-                            From = new()
-                            {
-                                Kind = "ImageStreamTag",
-                                Name = imageStreamTagName
-                            }
-                        }
-                    }
+                    MatchLabels = selectorLabels
                 },
                 Template = new()
                 {
@@ -137,4 +117,34 @@ sealed partial class DeployHandler
             }
         };
     }
+
+    private static Dictionary<string, string> GetAppDeploymentAnnotations(string imageStreamTagName, string? gitUri, string? gitRef)
+    {
+        Dictionary<string, string> annotations = new()
+        {
+            { "image.openshift.io/triggers", Serialize(new List<DeploymentTrigger>()
+            {
+                    new()
+                    {
+                        From = new()
+                        {
+                            Kind = "ImageStreamTag",
+                            Name = imageStreamTagName
+                        },
+                        FieldPath = $"spec.template.spec.containers[?(@.name==\"{ContainerName}\")].image",
+                        Pause = "false"
+                    }
+            }) }
+        };
+        if (gitUri is not null && gitRef is not null)
+        {
+            annotations[Annotations.VersionControlRef] = gitRef;
+            annotations[Annotations.VersionControlUri] = gitUri;
+        }
+
+        return annotations;
+    }
+
+    private static string Serialize(List<DeploymentTrigger> deploymentTriggers)
+        => JsonConvert.SerializeObject(deploymentTriggers);
 }
