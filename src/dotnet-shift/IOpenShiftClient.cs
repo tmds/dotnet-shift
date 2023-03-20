@@ -6,9 +6,14 @@ interface IOpenShiftClient
 
     Task<User> GetUserAsync(CancellationToken cancellationToken);
     Task<ProjectList> ListProjectsAsync(CancellationToken cancellationToken);
-    Task CreateDeploymentConfigAsync(DeploymentConfig deploymentConfig, CancellationToken cancellationToken);
-    Task PatchDeploymentConfigAsync(DeploymentConfig deploymentConfig, CancellationToken cancellationToken);
     Task<DeploymentConfig?> GetDeploymentConfigAsync(string name, CancellationToken cancellationToken);
+    Task<DeploymentConfigList> ListDeploymentConfigsAsync(string labelSelector, CancellationToken cancellationToken);
+    Task DeleteDeploymentConfigAsync(string name, CancellationToken cancellationToken);
+    Task CreateDeploymentAsync(Deployment deploymentConfig, CancellationToken cancellationToken);
+    Task PatchDeploymentAsync(Deployment deploymentConfig, CancellationToken cancellationToken);
+    Task<Deployment?> GetDeploymentAsync(string name, CancellationToken cancellationToken);
+    Task<DeploymentList> ListDeploymentsAsync(string labelSelector, CancellationToken cancellationToken);
+    Task DeleteDeploymentAsync(string name, CancellationToken cancellationToken);
     Task CreateBuildConfigAsync(BuildConfig buildConfig, CancellationToken cancellationToken);
     Task PatchBuildConfigAsync(BuildConfig buildConfig, CancellationToken cancellationToken);
     Task CreateConfigMapAsync(ConfigMap configMap, CancellationToken cancellationToken);
@@ -26,7 +31,6 @@ interface IOpenShiftClient
     Task<Build> StartBinaryBuildAsync(string buildConfigName, Stream archiveStream, CancellationToken cancellationToken);
     Task<Stream> FollowBuildLogAsync(string buildName, CancellationToken cancellationToken);
     Task<BuildConfigList> ListBuildConfigsAsync(string labelSelector, CancellationToken cancellationToken);
-    Task<DeploymentConfigList> ListDeploymentConfigsAsync(string labelSelector, CancellationToken cancellationToken);
     Task<ConfigMapList> ListConfigMapsAsync(string labelSelector, CancellationToken cancellationToken);
     Task<ImageStreamList> ListImageStreamsAsync(string labelSelector, CancellationToken cancellationToken);
     Task<RouteList> ListRoutesAsync(string labelSelector, CancellationToken cancellationToken);
@@ -35,6 +39,5 @@ interface IOpenShiftClient
     Task DeleteRouteAsync(string name, CancellationToken cancellationToken);
     Task DeleteConfigMapAsync(string name, CancellationToken cancellationToken);
     Task DeleteServiceAsync(string name, CancellationToken cancellationToken);
-    Task DeleteDeploymentConfigAsync(string name, CancellationToken cancellationToken);
     Task DeleteBuildConfigAsync(string name, CancellationToken cancellationToken);
 }

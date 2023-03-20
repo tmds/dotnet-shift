@@ -50,7 +50,6 @@ sealed partial class DeployHandler
 
         // Get git information.
         (string? gitUri, string? gitRef) = DetermineGitRemote(contextDir);
-        Dictionary<string, string> gitAnnotations = GetGitAnnotations(gitUri, gitRef);
 
         name ??= DefaultName(projectInformation.AssemblyName);
 
@@ -60,8 +59,8 @@ sealed partial class DeployHandler
 
         // Get the currently deployed resources for the name.
         string? currentPartOf = null;
-        DeploymentConfig? currentDeploymentConfig = await client.GetDeploymentConfigAsync(name, cancellationToken);
-        currentPartOf ??= GetPartOf(currentDeploymentConfig?.Metadata?.Labels);
+        Deployment? currentDeployment = await client.GetDeploymentAsync(name, cancellationToken);
+        currentPartOf ??= GetPartOf(currentDeployment?.Metadata?.Labels);
         BuildConfig? currentBuildConfig = await client.GetBuildConfigAsync(binaryBuildConfigName, cancellationToken);
         ConfigMap? currentConfigMap = await client.GetConfigMapAsync(name, cancellationToken);
         ImageStream? currentAppImageStream = await client.GetImageStreamAsync(name, cancellationToken);
@@ -87,7 +86,7 @@ sealed partial class DeployHandler
                                    binaryBuildConfigName,
                                    appImageStreamTagName,
                                    dotnetVersion,
-                                   currentDeploymentConfig,
+                                   currentDeployment,
                                    currentBuildConfig,
                                    currentConfigMap,
                                    currentAppImageStream,
@@ -95,7 +94,7 @@ sealed partial class DeployHandler
                                    currentService,
                                    currentDotnetImageStream,
                                    expose,
-                                   gitAnnotations,
+                                   gitUri, gitRef,
                                    componentLabels,
                                    dotnetLabels,
                                    selectorLabels,
@@ -157,7 +156,7 @@ sealed partial class DeployHandler
                                             string binaryBuildConfigName,
                                             string appImageStreamTagName,
                                             string dotnetVersion,
-                                            DeploymentConfig? currentDeploymentConfig,
+                                            Deployment? currentDeployment,
                                             BuildConfig? currentBuildConfig,
                                             ConfigMap? currentConfigMap,
                                             ImageStream? currentAppImageStream,
@@ -165,18 +164,18 @@ sealed partial class DeployHandler
                                             Service? currentService,
                                             ImageStream? currentDotnetImageStream,
                                             bool expose,
-                                            Dictionary<string, string> gitAnnotations,
+                                            string? gitUri, string? gitRef,
                                             Dictionary<string, string> componentLabels,
                                             Dictionary<string, string> dotnetLabels,
                                             Dictionary<string, string> selectorLabels,
                                             CancellationToken cancellationToken)
     {
-        await ApplyAppDeploymentConfig(
+        await ApplyAppDeployment(
             client,
             name,
-            currentDeploymentConfig,
+            currentDeployment,
             appImageStreamTagName,
-            gitAnnotations,
+            gitUri, gitRef,
             Merge(componentLabels, dotnetLabels),
             selectorLabels,
             cancellationToken
@@ -238,19 +237,6 @@ sealed partial class DeployHandler
 
     private static Dictionary<string, string> Merge(Dictionary<string, string> dict1, Dictionary<string, string> dict2)
         => new[] { dict1, dict2 }.SelectMany(d => d).ToDictionary(p => p.Key, p => p.Value);
-
-    private static Dictionary<string, string> GetGitAnnotations(string? gitUri, string? gitRef)
-    {
-        Dictionary<string, string> annotations = new();
-
-        if (gitUri is not null && gitRef is not null)
-        {
-            annotations[Annotations.VersionControlRef] = gitRef;
-            annotations[Annotations.VersionControlUri] = gitUri;
-        }
-
-        return annotations;
-    }
 
     private static Dictionary<string, string> GetComponentLabels(string appName, string name)
     {

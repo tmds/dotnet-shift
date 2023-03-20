@@ -32,29 +32,42 @@ class CommandLine<TContext>
     public Task<int> InvokeAsync(string[] args, CancellationToken cancellationToken = default)
         => RootCommand.InvokeAsync(args, _console, cancellationToken);
 
-    protected class Command : System.CommandLine.Command, ICommandHandler
+    protected class Command : System.CommandLine.Command
     {
         private readonly ContextFactory<TContext> _contextFactory;
 
         public Command(ContextFactory<TContext> contextFactory, string name, string? description = null) :
             base(name, description)
         {
-            base.Handler = this;
             _contextFactory = contextFactory;
         }
 
-        public int Invoke(InvocationContext context)
+        public Handler? Handler
         {
-            throw new System.NotImplementedException();
+            get => (base.Action as MyCliAction)?.Handler;
+            set => base.Action = value is null ? null : new MyCliAction(_contextFactory, value);
         }
 
-        public new Handler? Handler { get; set; }
-
-        public async Task<int> InvokeAsync(InvocationContext context, CancellationToken cancellationToken = default)
+        private async Task<int> InvokeAsync(InvocationContext context, CancellationToken cancellationToken = default)
         {
             TContext commandContext = _contextFactory(context);
 
             return await Handler!(commandContext, cancellationToken);
+        }
+
+        private sealed class MyCliAction : CliAction
+        {
+            private readonly ContextFactory<TContext> _contextFactory;
+            public Handler Handler { get; }
+
+            public MyCliAction(ContextFactory<TContext> contextFactory, Handler handler)
+                => (_contextFactory, Handler) = (contextFactory, handler);
+
+            public override int Invoke(InvocationContext context)
+                => InvokeAsync(context, default).GetAwaiter().GetResult();
+
+            public override Task<int> InvokeAsync(InvocationContext context, CancellationToken cancellationToken = default)
+                => Handler(_contextFactory(context), cancellationToken);
         }
     }
 

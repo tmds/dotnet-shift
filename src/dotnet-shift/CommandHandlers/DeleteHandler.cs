@@ -52,6 +52,9 @@ sealed partial class DeleteHandler
                 case ResourceType.DeploymentConfig:
                     await client.DeleteDeploymentConfigAsync(resource.Name, cancellationToken);
                     break;
+                case ResourceType.Deployment:
+                    await client.DeleteDeploymentAsync(resource.Name, cancellationToken);
+                    break;
                 case ResourceType.BuildConfig:
                     await client.DeleteBuildConfigAsync(resource.Name, cancellationToken);
                     break;
@@ -101,6 +104,12 @@ sealed partial class DeleteHandler
             r => r.Metadata.Labels,
             cancellationToken);
 
+        await AppendResourcesAsync<Deployment>(resources, selector, client,
+            async (c, s, ct) => (await c.ListDeploymentsAsync(s, ct)).Items,
+            r => r.Metadata.Name,
+            r => r.Metadata.Labels,
+            cancellationToken);
+
         return resources;
     }
 
@@ -114,7 +123,8 @@ sealed partial class DeleteHandler
         static int TypeOrder(ResourceType type) => // The higher the number, the later it is removed.
             type switch
             {
-                ResourceType.BuildConfig => 2,
+                ResourceType.BuildConfig => 3,
+                ResourceType.Deployment => 2,
                 ResourceType.DeploymentConfig => 1,
                 _ => 0
             };
@@ -127,6 +137,7 @@ sealed partial class DeleteHandler
         Route,
         Service,
         DeploymentConfig,
+        Deployment,
         BuildConfig
     }
 
@@ -177,6 +188,10 @@ sealed partial class DeleteHandler
             else if (type == typeof(BuildConfig))
             {
                 return ResourceType.BuildConfig;
+            }
+            else if (type == typeof(Deployment))
+            {
+                return ResourceType.Deployment;
             }
 
             throw new System.NotImplementedException($"{type.FullName} is not mapped");
