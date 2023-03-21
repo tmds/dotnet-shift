@@ -11,7 +11,7 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task PatchRouteAsync(Route route, CancellationToken cancellationToken)
         => PatchRouteOpenshiftIoV1NamespacedRouteAsync(route, route.Metadata.Name, Namespace, cancellationToken: cancellationToken);
 
-    public Task<RouteList> ListRoutesAsync(string labelSelector, CancellationToken cancellationToken)
+    public Task<RouteList> ListRoutesAsync(string? labelSelector, CancellationToken cancellationToken)
         => ListRouteOpenshiftIoV1NamespacedRouteAsync(Namespace, labelSelector: labelSelector, cancellationToken: cancellationToken);
 
     public Task DeleteRouteAsync(string name, CancellationToken cancellationToken)

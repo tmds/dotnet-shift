@@ -122,19 +122,20 @@ sealed partial class DeployHandler
     {
         Dictionary<string, string> annotations = new()
         {
-            { "image.openshift.io/triggers", Serialize(new List<DeploymentTrigger>()
-            {
-                    new()
-                    {
-                        From = new()
+            { Annotations.OpenShiftTriggers, Serialize(new List<DeploymentTrigger>()
+                {
+                        new()
                         {
-                            Kind = "ImageStreamTag",
-                            Name = imageStreamTagName
-                        },
-                        FieldPath = $"spec.template.spec.containers[?(@.name==\"{ContainerName}\")].image",
-                        Pause = "false"
-                    }
-            }) }
+                            From = new()
+                            {
+                                Kind = "ImageStreamTag",
+                                Name = imageStreamTagName
+                            },
+                            FieldPath = $"spec.template.spec.containers[?(@.name==\"{ContainerName}\")].image",
+                            Pause = "false"
+                        }
+                })
+            }
         };
         if (gitUri is not null && gitRef is not null)
         {

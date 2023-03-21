@@ -108,7 +108,7 @@ sealed partial class DeployHandler
             Route? route = await client.GetRouteAsync(name, cancellationToken);
             if (route is not null)
             {
-                Console.WriteLine($"The application can be reached at 'http://{route.Spec.Host}'");
+                Console.WriteLine($"The application can be reached at '{route.GetRouteUrl()}'");
             }
         }
 
@@ -170,6 +170,16 @@ sealed partial class DeployHandler
                                             Dictionary<string, string> selectorLabels,
                                             CancellationToken cancellationToken)
     {
+        // Order this reverse to the Delete order:
+        // First BuildConfig, then DeploymentConfig, then the rest.
+        await ApplyBinaryBuildConfig(
+            client,
+            binaryBuildConfigName,
+            currentBuildConfig,
+            appImageStreamTagName,
+            s2iImageStreamTag: $"{DotnetImageStreamName}:{dotnetVersion}",
+            Merge(componentLabels, dotnetLabels),
+            cancellationToken);
         await ApplyAppDeployment(
             client,
             name,
@@ -180,15 +190,6 @@ sealed partial class DeployHandler
             selectorLabels,
             cancellationToken
         );
-
-        await ApplyBinaryBuildConfig(
-            client,
-            binaryBuildConfigName,
-            currentBuildConfig,
-            appImageStreamTagName,
-            s2iImageStreamTag: $"{DotnetImageStreamName}:{dotnetVersion}",
-            Merge(componentLabels, dotnetLabels),
-            cancellationToken);
 
         if (currentConfigMap is null)
         {
