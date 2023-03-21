@@ -33,11 +33,12 @@ interface IOpenShiftClient
     Task<BuildConfigList> ListBuildConfigsAsync(string labelSelector, CancellationToken cancellationToken);
     Task<ConfigMapList> ListConfigMapsAsync(string labelSelector, CancellationToken cancellationToken);
     Task<ImageStreamList> ListImageStreamsAsync(string labelSelector, CancellationToken cancellationToken);
-    Task<RouteList> ListRoutesAsync(string labelSelector, CancellationToken cancellationToken);
-    Task<ServiceList> ListServicesAsync(string labelSelector, CancellationToken cancellationToken);
+    Task<RouteList> ListRoutesAsync(string? labelSelector, CancellationToken cancellationToken);
+    Task<ServiceList> ListServicesAsync(string? labelSelector, CancellationToken cancellationToken);
     Task DeleteImageStreamAsync(string name, CancellationToken cancellationToken);
     Task DeleteRouteAsync(string name, CancellationToken cancellationToken);
     Task DeleteConfigMapAsync(string name, CancellationToken cancellationToken);
     Task DeleteServiceAsync(string name, CancellationToken cancellationToken);
     Task DeleteBuildConfigAsync(string name, CancellationToken cancellationToken);
+    Task<PodList> ListPodsAsync(string labelSelector, CancellationToken cancellationToken);
 }

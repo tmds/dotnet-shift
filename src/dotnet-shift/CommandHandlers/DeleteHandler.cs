@@ -69,44 +69,51 @@ sealed partial class DeleteHandler
         List<Resource> resources = new();
 
         await AppendResourcesAsync<ImageStream>(resources, selector, client,
+            ResourceType.ImageStream,
             async (c, s, ct) => (await c.ListImageStreamsAsync(s, ct)).Items,
-            r => r.Metadata.Name,
+            r => r.GetName(),
             r => r.Metadata.Labels,
             cancellationToken);
 
         await AppendResourcesAsync<ConfigMap>(resources, selector, client,
+            ResourceType.ConfigMap,
             async (c, s, ct) => (await c.ListConfigMapsAsync(s, ct)).Items,
-            r => r.Metadata.Name,
+            r => r.GetName(),
             r => r.Metadata.Labels,
             cancellationToken);
 
         await AppendResourcesAsync<Route>(resources, selector, client,
+            ResourceType.Route,
             async (c, s, ct) => (await c.ListRoutesAsync(s, ct)).Items,
-            r => r.Metadata.Name,
+            r => r.GetName(),
             r => r.Metadata.Labels,
             cancellationToken);
 
         await AppendResourcesAsync<Service>(resources, selector, client,
+            ResourceType.Service,
             async (c, s, ct) => (await c.ListServicesAsync(s, ct)).Items,
-            r => r.Metadata.Name,
+            r => r.GetName(),
             r => r.Metadata.Labels,
             cancellationToken);
 
         await AppendResourcesAsync<DeploymentConfig>(resources, selector, client,
+            ResourceType.DeploymentConfig,
             async (c, s, ct) => (await c.ListDeploymentConfigsAsync(s, ct)).Items,
-            r => r.Metadata.Name,
+            r => r.GetName(),
             r => r.Metadata.Labels,
             cancellationToken);
 
         await AppendResourcesAsync<BuildConfig>(resources, selector, client,
+            ResourceType.BuildConfig,
             async (c, s, ct) => (await c.ListBuildConfigsAsync(s, ct)).Items,
-            r => r.Metadata.Name,
+            r => r.GetName(),
             r => r.Metadata.Labels,
             cancellationToken);
 
         await AppendResourcesAsync<Deployment>(resources, selector, client,
+            ResourceType.Deployment,
             async (c, s, ct) => (await c.ListDeploymentsAsync(s, ct)).Items,
-            r => r.Metadata.Name,
+            r => r.GetName(),
             r => r.Metadata.Labels,
             cancellationToken);
 
@@ -145,6 +152,7 @@ sealed partial class DeleteHandler
         List<Resource> resources,
         string selector,
         IOpenShiftClient client,
+        ResourceType type,
         System.Func<IOpenShiftClient, string, CancellationToken, Task<IEnumerable<TResource>>> findResources,
         System.Func<TResource, string> getName,
         System.Func<TResource, IDictionary<string, string>> getLabels,
@@ -155,46 +163,13 @@ sealed partial class DeleteHandler
         {
             string name = getName(item);
             bool hasDotnetRuntimeLabel = getLabels(item).TryGetValue(ResourceLabels.Runtime, out string? value) && value == ResourceLabelValues.DotnetRuntime;
+
             resources.Add(new Resource()
             {
                 Name = name,
-                Type = GetResourceType(typeof(TResource)),
+                Type = type,
                 HasDotnetRuntimeLabel = hasDotnetRuntimeLabel
             });
-        }
-
-        static ResourceType GetResourceType(System.Type type)
-        {
-            if (type == typeof(ImageStream))
-            {
-                return ResourceType.ImageStream;
-            }
-            else if (type == typeof(ConfigMap))
-            {
-                return ResourceType.ConfigMap;
-            }
-            else if (type == typeof(Route))
-            {
-                return ResourceType.Route;
-            }
-            else if (type == typeof(Service))
-            {
-                return ResourceType.Service;
-            }
-            else if (type == typeof(DeploymentConfig))
-            {
-                return ResourceType.DeploymentConfig;
-            }
-            else if (type == typeof(BuildConfig))
-            {
-                return ResourceType.BuildConfig;
-            }
-            else if (type == typeof(Deployment))
-            {
-                return ResourceType.Deployment;
-            }
-
-            throw new System.NotImplementedException($"{type.FullName} is not mapped");
         }
     }
 

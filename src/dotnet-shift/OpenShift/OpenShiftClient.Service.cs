@@ -12,7 +12,7 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task PatchServiceAsync(Service service, CancellationToken cancellationToken)
         => PatchCoreV1NamespacedServiceAsync(service, service.Metadata.Name, Namespace, cancellationToken: cancellationToken);
 
-    public Task<ServiceList> ListServicesAsync(string labelSelector, CancellationToken cancellationToken)
+    public Task<ServiceList> ListServicesAsync(string? labelSelector, CancellationToken cancellationToken)
         => ListCoreV1NamespacedServiceAsync(Namespace, labelSelector: labelSelector, cancellationToken: cancellationToken);
 
     public Task DeleteServiceAsync(string name, CancellationToken cancellationToken)
