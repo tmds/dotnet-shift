@@ -2,7 +2,7 @@ namespace CommandHandlers;
 
 using System;
 using System.Runtime.InteropServices;
-using LibGit2Sharp;
+// using LibGit2Sharp;
 using MSBuild;
 using OpenShift;
 
@@ -286,33 +286,34 @@ sealed partial class DeployHandler
 
     private static (string? gitUri, string? gitRef) DetermineGitRemote(string path)
     {
-        if (!Directory.Exists(Path.Combine(path, ".git")))
-        {
-            return (null, null);
-        }
+        return (null, null);
+        // if (!Directory.Exists(Path.Combine(path, ".git")))
+        // {
+        //     return (null, null);
+        // }
 
-        var gitRepo = new Repository(path);
+        // var gitRepo = new Repository(path);
 
-        Branch? remoteBranch = gitRepo.Head?.TrackedBranch;
-        if (remoteBranch is null)
-        {
-            return (null, null);
-        }
+        // Branch? remoteBranch = gitRepo.Head?.TrackedBranch;
+        // if (remoteBranch is null)
+        // {
+        //     return (null, null);
+        // }
 
-        // determine gitUri
-        string remoteName = remoteBranch.RemoteName;
-        Remote remote = gitRepo.Network.Remotes.First(r => r.Name == remoteName);
-        string gitUri = remote.Url;
+        // // determine gitUri
+        // string remoteName = remoteBranch.RemoteName;
+        // Remote remote = gitRepo.Network.Remotes.First(r => r.Name == remoteName);
+        // string gitUri = remote.Url;
 
-        // determine gitRef
-        string canonicalBranchName = remoteBranch.UpstreamBranchCanonicalName;
-        if (!canonicalBranchName.StartsWith("refs/heads/"))
-        {
-            return (null, null);
-        }
-        string gitRef = canonicalBranchName.Substring("refs/heads/".Length);
+        // // determine gitRef
+        // string canonicalBranchName = remoteBranch.UpstreamBranchCanonicalName;
+        // if (!canonicalBranchName.StartsWith("refs/heads/"))
+        // {
+        //     return (null, null);
+        // }
+        // string gitRef = canonicalBranchName.Substring("refs/heads/".Length);
 
-        return (gitUri, gitRef);
+        // return (gitUri, gitRef);
     }
 
     internal static bool IsProjectInformationUsable(IAnsiConsole Console, ProjectInformation projectInformation)
