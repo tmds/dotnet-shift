@@ -6,4 +6,5 @@ interface ILoginContextRepository
     void SetCurrentContext(string contextName);
     bool DeleteContext(string contextName);
     LoginContext? GetContext(string contextName);
+    string GetDefaultName(LoginContext login);
 }

@@ -50,7 +50,7 @@ sealed class KubernetesConfigFile : ILoginContextRepository
         string contextId = loginContext.Name;
         if (string.IsNullOrEmpty(contextId))
         {
-            contextId = $"{ns}/{clusterId}/{userName}";
+            contextId = GetDefaultName(loginContext);
         }
 
         Cluster cluster = new()
@@ -273,4 +273,16 @@ sealed class KubernetesConfigFile : ILoginContextRepository
 
     public LoginContext? GetContext(string contextName)
         => GetAllContexts(includeTokens: true).FirstOrDefault(c => c.Name == contextName);
+
+    public string GetDefaultName(LoginContext loginContext)
+    {
+        string server = loginContext.Server;
+        string userName = loginContext.Username;
+        string ns = loginContext.Namespace;
+
+        Uri serverUri = new Uri(server); // TODO: handle invalid uri format.
+        string clusterId = $"{serverUri.Host.Replace('.', '-')}:{serverUri.Port}";
+
+        return $"{ns}/{clusterId}/{userName}";
+    }
 }
