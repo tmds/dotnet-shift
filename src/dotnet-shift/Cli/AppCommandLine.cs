@@ -21,7 +21,7 @@ sealed partial class AppCommandLine : CommandLine<AppContext>
             CreateRootCommand(),
             builder =>
             {
-                builder.CancelOnProcessTermination(System.TimeSpan.FromSeconds(2));
+                builder.UseDefaults();
             });
     }
 

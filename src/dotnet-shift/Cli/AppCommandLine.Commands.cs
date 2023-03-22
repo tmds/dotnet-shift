@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.CommandLine.IO;
 using System.Net;
 using System.Net.Sockets;
 using CommandHandlers;
@@ -16,6 +17,28 @@ partial class AppCommandLine
         root.Add(CreateContextCommand());
         root.Add(CreateListCommand());
         root.Add(CreateDeleteCommand());
+
+        root.SetAction(ctx =>
+        {
+            IConsole Console = ctx.Console;
+            IStandardStreamWriter Out = Console.Out;
+            Out.WriteLine("'dotnet shift' is a .NET tool for working with OpenShift.");
+            Out.WriteLine("");
+            Out.WriteLine("You can use it to deploy a .NET project directly to OpenShift:");
+            Out.WriteLine("");
+            Out.WriteLine("- Log in to the OpenShift cluster using the 'login' command.");
+            Out.WriteLine("  The token and server arguments can be found in the OpenShift Web console:");
+            Out.WriteLine("");
+            Out.WriteLine("   dotnet shift login --token=<TOKEN> --server=<SERVER>");
+            Out.WriteLine("");
+            Out.WriteLine("- Deploy the app to OpenShift using the 'deploy' command.");
+            Out.WriteLine("  By adding the '--expose' option, the application is accessible externally.");
+            Out.WriteLine("");
+            Out.WriteLine("   dotnet deploy --expose <PATH TO PROJECT>");
+            Out.WriteLine("");
+            Out.WriteLine("For an overview of available commands, run 'dotnet shift --help'.");
+        });
+
         return root;
     }
 
