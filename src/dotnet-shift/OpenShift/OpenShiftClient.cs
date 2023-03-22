@@ -15,7 +15,7 @@ partial class OpenShiftClient : IOpenShiftClient
         BaseUrl = server;
         Namespace = @namespace;
         _settings = new System.Lazy<Newtonsoft.Json.JsonSerializerSettings>(CreateSerializerSettings);
-        _httpClient = new HttpClient(new MessageHandler(token, skipTlsVerify));
+        _httpClient = new HttpClient(new MessageHandler(token, skipTlsVerify, Host));
     }
 
     private Newtonsoft.Json.JsonSerializerSettings CreateSerializerSettings()
@@ -25,16 +25,32 @@ partial class OpenShiftClient : IOpenShiftClient
         return settings;
     }
 
+    private OpenShiftClientException CreateApiException(string message, int statusCode, string response, System.Collections.Generic.IReadOnlyDictionary<string, System.Collections.Generic.IEnumerable<string>> headers, System.Exception innerException)
+    {
+        // NSwag does 'throw new ApiException' which we search and replace by 'throw CreateApiException'.
+        // Here we map the arguments to what we want for OpenShiftClientException.
+
+        return new OpenShiftClientException(Host, message, GetCause(message), GetStatusCode(statusCode, message), innerException);
+
+        static OpenShiftClientExceptionCause GetCause(string message) =>
+            message == "Response was null which was not expected." ? OpenShiftClientExceptionCause.UnexpectedResponseContent : OpenShiftClientExceptionCause.Failed;
+
+        static System.Net.HttpStatusCode? GetStatusCode(int statusCode, string message)
+            => GetCause(message) == OpenShiftClientExceptionCause.UnexpectedResponseContent ? null : (System.Net.HttpStatusCode)statusCode;
+    }
+
     private class MessageHandler : DelegatingHandler
     {
-        AuthenticationHeaderValue _authHeader;
+        private readonly AuthenticationHeaderValue _authHeader;
+        private readonly string _host;
 
-        public MessageHandler(string token, bool skipTlsVerify) : base(CreateBaseHandler(skipTlsVerify))
+        public MessageHandler(string token, bool skipTlsVerify, string host) : base(CreateBaseHandler(skipTlsVerify))
         {
             _authHeader = new AuthenticationHeaderValue("Bearer", token);
+            _host = host;
         }
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             request.Headers.Authorization = _authHeader;
 
@@ -44,7 +60,18 @@ partial class OpenShiftClient : IOpenShiftClient
                              mediaType != "application/json-patch+json"); // Use stragetic merge: "application/strategic-merge-patch+json"
             }
 
-            return base.SendAsync(request, cancellationToken);
+            try
+            {
+                return await base.SendAsync(request, cancellationToken);
+            }
+            catch (System.OperationCanceledException)
+            {
+                throw;
+            }
+            catch (System.Exception ex)
+            {
+                throw new OpenShiftClientException(_host, ex.Message, OpenShiftClientExceptionCause.ConnectionIssue, httpStatusCode: null, ex);
+            }
         }
 
         private static HttpMessageHandler CreateBaseHandler(bool skipTlsVerify)
@@ -72,6 +99,15 @@ partial class OpenShiftClient : IOpenShiftClient
     private Newtonsoft.Json.JsonSerializerSettings JsonSerializerSettings { get { return _settings.Value; } }
 
     partial void UpdateJsonSerializerSettings(Newtonsoft.Json.JsonSerializerSettings settings);
+
+    internal string Host
+    {
+        get
+        {
+            System.Uri.TryCreate(BaseUrl, System.UriKind.Absolute, out System.Uri uri);
+            return uri?.Host ?? "";
+        }
+    }
 
     private string ConvertToString(object value, System.Globalization.CultureInfo cultureInfo)
     {
@@ -118,8 +154,6 @@ partial class OpenShiftClient : IOpenShiftClient
         return result == null ? "" : result;
     }
 
-    public bool ReadResponseAsString { get; set; }
-
     private async Task<ObjectResponseResult<T>> ReadObjectResponseAsync<T>(System.Net.Http.HttpResponseMessage response, System.Collections.Generic.IReadOnlyDictionary<string, System.Collections.Generic.IEnumerable<string>> headers, System.Threading.CancellationToken cancellationToken)
     {
         if (response == null || response.Content == null)
@@ -127,38 +161,21 @@ partial class OpenShiftClient : IOpenShiftClient
             return new ObjectResponseResult<T>(default(T), string.Empty);
         }
 
-        if (ReadResponseAsString)
+        try
         {
-            var responseText = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-            try
+            using (var responseStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+            using (var streamReader = new System.IO.StreamReader(responseStream))
+            using (var jsonTextReader = new Newtonsoft.Json.JsonTextReader(streamReader))
             {
-                var typedBody = Newtonsoft.Json.JsonConvert.DeserializeObject<T>(responseText, JsonSerializerSettings);
-                return new ObjectResponseResult<T>(typedBody, responseText);
-            }
-            catch (Newtonsoft.Json.JsonException exception)
-            {
-                var message = "Could not deserialize the response body string as " + typeof(T).FullName + ".";
-                throw new ApiException(message, (int)response.StatusCode, responseText, headers, exception);
+                var serializer = Newtonsoft.Json.JsonSerializer.Create(JsonSerializerSettings);
+                var typedBody = serializer.Deserialize<T>(jsonTextReader);
+                return new ObjectResponseResult<T>(typedBody, string.Empty);
             }
         }
-        else
+        catch (Newtonsoft.Json.JsonException exception)
         {
-            try
-            {
-                using (var responseStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
-                using (var streamReader = new System.IO.StreamReader(responseStream))
-                using (var jsonTextReader = new Newtonsoft.Json.JsonTextReader(streamReader))
-                {
-                    var serializer = Newtonsoft.Json.JsonSerializer.Create(JsonSerializerSettings);
-                    var typedBody = serializer.Deserialize<T>(jsonTextReader);
-                    return new ObjectResponseResult<T>(typedBody, string.Empty);
-                }
-            }
-            catch (Newtonsoft.Json.JsonException exception)
-            {
-                var message = "Could not deserialize the response body stream as " + typeof(T).FullName + ".";
-                throw new ApiException(message, (int)response.StatusCode, string.Empty, headers, exception);
-            }
+            var message = "Could not deserialize the response body stream as " + typeof(T).FullName + ".";
+            throw new OpenShiftClientException(Host, message, OpenShiftClientExceptionCause.UnexpectedResponseContent, httpStatusCode: null, exception);
         }
     }
 

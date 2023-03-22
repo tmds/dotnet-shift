@@ -11,12 +11,26 @@ class CommandLine<TContext>
 
     private readonly ContextFactory<TContext> _contextFactory;
     private readonly IConsole _console;
+    private CommandLineConfiguration? _config;
 
-    protected System.CommandLine.Command RootCommand { get; set; }
+    private TContext CreateContext(InvocationContext context)
+        => _contextFactory(context);
+
+    protected Filter? ContextExceptionHandler { get; set; }
+
+    protected void Configure(RootCommand command, System.Action<CommandLineBuilder> configure)
+    {
+        if (_config is not null)
+        {
+            throw new System.InvalidOperationException();
+        }
+        var builder = new CommandLineBuilder(command);
+        configure?.Invoke(builder);
+        _config = builder.Build();
+    }
 
     protected CommandLine(ContextFactory<TContext> contextFactory, IConsole console)
     {
-        RootCommand = null!;
         _console = console;
         _contextFactory = contextFactory;
     }
@@ -26,48 +40,47 @@ class CommandLine<TContext>
 
     protected Command CreateCommand(string name, string? description = null)
     {
-        return new Command(_contextFactory, name, description);
+        return new Command(this, name, description);
     }
 
-    public Task<int> InvokeAsync(string[] args, CancellationToken cancellationToken = default)
-        => RootCommand.InvokeAsync(args, _console, cancellationToken);
+    public Task<int> InvokeAsync(string[] args)
+        => _config!.InvokeAsync(args, _console);
 
     protected class Command : System.CommandLine.Command
     {
-        private readonly ContextFactory<TContext> _contextFactory;
+        private readonly CommandLine<TContext> _commandLine;
 
-        public Command(ContextFactory<TContext> contextFactory, string name, string? description = null) :
+        public Command(CommandLine<TContext> commandLine, string name, string? description = null) :
             base(name, description)
         {
-            _contextFactory = contextFactory;
+            _commandLine = commandLine;
         }
 
         public Handler? Handler
         {
             get => (base.Action as MyCliAction)?.Handler;
-            set => base.Action = value is null ? null : new MyCliAction(_contextFactory, value);
-        }
-
-        private async Task<int> InvokeAsync(InvocationContext context, CancellationToken cancellationToken = default)
-        {
-            TContext commandContext = _contextFactory(context);
-
-            return await Handler!(commandContext, cancellationToken);
+            set => base.Action = value is null ? null : new MyCliAction(_commandLine, value);
         }
 
         private sealed class MyCliAction : CliAction
         {
-            private readonly ContextFactory<TContext> _contextFactory;
+            private readonly CommandLine<TContext> _commandLine;
             public Handler Handler { get; }
 
-            public MyCliAction(ContextFactory<TContext> contextFactory, Handler handler)
-                => (_contextFactory, Handler) = (contextFactory, handler);
+            public MyCliAction(CommandLine<TContext> commandLine, Handler handler)
+                => (_commandLine, Handler) = (commandLine, handler);
 
             public override int Invoke(InvocationContext context)
                 => InvokeAsync(context, default).GetAwaiter().GetResult();
 
             public override Task<int> InvokeAsync(InvocationContext context, CancellationToken cancellationToken = default)
-                => Handler(_contextFactory(context), cancellationToken);
+            {
+                TContext ctx = _commandLine.CreateContext(context);
+                if (_commandLine.ContextExceptionHandler is { } eh)
+                    return eh(ctx, (c, ct) => Handler(c, ct), cancellationToken);
+                else
+                    return Handler(ctx, cancellationToken);
+            }
         }
     }
 

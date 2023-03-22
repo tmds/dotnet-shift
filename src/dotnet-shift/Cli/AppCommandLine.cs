@@ -16,7 +16,13 @@ sealed partial class AppCommandLine : CommandLine<AppContext>
     private AppCommandLine(ContextFactory<AppContext> contextFactory, IConsole console) :
         base(contextFactory, console)
     {
-        RootCommand = CreateRootCommand();
+        ContextExceptionHandler = ExceptionHandler;
+        Configure(
+            CreateRootCommand(),
+            builder =>
+            {
+                builder.CancelOnProcessTermination(System.TimeSpan.FromSeconds(2));
+            });
     }
 
     private static AppContext DefaultContextFactory(InvocationContext invocationContext)

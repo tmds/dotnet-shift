@@ -1,5 +1,8 @@
 using System.CommandLine;
+using System.Net;
+using System.Net.Sockets;
 using CommandHandlers;
+using OpenShift;
 
 namespace Cli;
 
@@ -212,7 +215,7 @@ partial class AppCommandLine
         return command;
     }
 
-    static async Task<int> GetLoginContext(AppContext ctx, Handler next, CancellationToken cancellatinToken)
+    static async Task<int> GetLoginContext(AppContext ctx, Handler next, CancellationToken cancellationToken)
     {
         var services = ctx.Services;
         var parseResult = ctx.ParseResult;
@@ -232,7 +235,77 @@ partial class AppCommandLine
         {
             ctx.LoginContext = loginContext;
 
+            return await next(ctx, cancellationToken);
+        }
+    }
+
+    static async Task<int> ExceptionHandler(AppContext ctx, Handler next, CancellationToken cancellatinToken)
+    {
+        var services = ctx.Services;
+        var Console = services.Console;
+        System.Exception? printException = null;
+        try
+        {
             return await next(ctx, cancellatinToken);
         }
+        catch (System.OperationCanceledException)
+        {
+            Console.WriteErrorLine("The command was aborted by the user.");
+            return CommandResult.Failure;
+        }
+        catch (OpenShiftClientException clientException)
+        {
+            // Print a human-friendly message for some errors.
+            if (clientException.Cause == OpenShiftClientExceptionCause.ConnectionIssue)
+            {
+                if (clientException.SocketError.HasValue)
+                {
+                    switch (clientException.SocketError.Value)
+                    {
+                        case SocketError.HostNotFound:
+                            Console.WriteErrorLine($"Host '{clientException.Host}' is not known.");
+                            return CommandResult.Failure;
+                    }
+                }
+            }
+            else if (clientException.Cause == OpenShiftClientExceptionCause.Failed)
+            {
+                switch (clientException.HttpStatusCode)
+                {
+                    case HttpStatusCode.Unauthorized:
+                        Console.WriteErrorLine("The credentials are not valid for performing the requested operation.");
+                        Console.WriteLine("Your credentials may have expired. You can use the 'login' command to update your credentials.");
+                        return CommandResult.Failure;
+                }
+            }
+
+            switch (clientException.Cause)
+            {
+                case OpenShiftClientExceptionCause.ConnectionIssue:
+                    Console.WriteErrorLine("There was an issue with the HTTP connection.");
+                    break;
+                case OpenShiftClientExceptionCause.UnexpectedResponseContent:
+                    Console.WriteErrorLine("The server response was not understood.");
+                    break;
+                case OpenShiftClientExceptionCause.Failed:
+                    Console.WriteErrorLine("The server failed to execute the request.");
+                    break;
+            }
+            printException = clientException;
+        }
+        catch (System.Exception ex)
+        {
+            Console.WriteErrorLine("An unexpected exception occurred while handling the command.");
+            printException = ex;
+        }
+
+        if (printException is not null)
+        {
+            Console.WriteLine();
+            Console.WriteLine("The following stacktrace may help identify the problem.");
+            Console.WriteException(printException);
+        }
+
+        return CommandResult.Failure;
     }
 }
