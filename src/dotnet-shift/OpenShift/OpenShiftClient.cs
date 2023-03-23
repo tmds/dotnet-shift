@@ -30,13 +30,22 @@ partial class OpenShiftClient : IOpenShiftClient
         // NSwag does 'throw new ApiException' which we search and replace by 'throw CreateApiException'.
         // Here we map the arguments to what we want for OpenShiftClientException.
 
-        return new OpenShiftClientException(Host, message, GetCause(message), GetStatusCode(statusCode, message), innerException);
+        return new OpenShiftClientException(Host, UpdateMessage(message, statusCode), GetCause(message), GetStatusCode(statusCode, message), response, innerException);
 
         static OpenShiftClientExceptionCause GetCause(string message) =>
             message == "Response was null which was not expected." ? OpenShiftClientExceptionCause.UnexpectedResponseContent : OpenShiftClientExceptionCause.Failed;
 
         static System.Net.HttpStatusCode? GetStatusCode(int statusCode, string message)
             => GetCause(message) == OpenShiftClientExceptionCause.UnexpectedResponseContent ? null : (System.Net.HttpStatusCode)statusCode;
+
+        static string UpdateMessage(string message, int statusCode)
+        {
+            if (message.StartsWith("The HTTP status code of the response was not expected ("))
+            {
+                message = $"The HTTP status code of the response was not expected: {(System.Net.HttpStatusCode)statusCode}";
+            }
+            return message;
+        }
     }
 
     private class MessageHandler : DelegatingHandler
@@ -70,7 +79,7 @@ partial class OpenShiftClient : IOpenShiftClient
             }
             catch (System.Exception ex)
             {
-                throw new OpenShiftClientException(_host, ex.Message, OpenShiftClientExceptionCause.ConnectionIssue, httpStatusCode: null, ex);
+                throw new OpenShiftClientException(_host, ex.Message, OpenShiftClientExceptionCause.ConnectionIssue, httpStatusCode: null, responseText: null, ex);
             }
         }
 
@@ -161,21 +170,16 @@ partial class OpenShiftClient : IOpenShiftClient
             return new ObjectResponseResult<T>(default(T), string.Empty);
         }
 
+        var responseText = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
         try
         {
-            using (var responseStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
-            using (var streamReader = new System.IO.StreamReader(responseStream))
-            using (var jsonTextReader = new Newtonsoft.Json.JsonTextReader(streamReader))
-            {
-                var serializer = Newtonsoft.Json.JsonSerializer.Create(JsonSerializerSettings);
-                var typedBody = serializer.Deserialize<T>(jsonTextReader);
-                return new ObjectResponseResult<T>(typedBody, string.Empty);
-            }
+            var typedBody = Newtonsoft.Json.JsonConvert.DeserializeObject<T>(responseText, JsonSerializerSettings);
+            return new ObjectResponseResult<T>(typedBody, responseText);
         }
         catch (Newtonsoft.Json.JsonException exception)
         {
-            var message = "Could not deserialize the response body stream as " + typeof(T).FullName + ".";
-            throw new OpenShiftClientException(Host, message, OpenShiftClientExceptionCause.UnexpectedResponseContent, httpStatusCode: null, exception);
+            var message = "Could not deserialize the response body string as " + typeof(T).FullName + ".";
+            throw new OpenShiftClientException(Host, message, OpenShiftClientExceptionCause.UnexpectedResponseContent, httpStatusCode: null, responseText, exception);
         }
     }
 
