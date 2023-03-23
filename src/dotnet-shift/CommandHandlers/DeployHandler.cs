@@ -13,14 +13,16 @@ sealed partial class DeployHandler
     private string WorkingDirectory { get; }
     private IOpenShiftClientFactory OpenShiftClientFactory { get; }
     private IProjectReader ProjectReader { get; }
+    private IGitRepoReader GitRepoReader { get; }
 
-    public DeployHandler(IAnsiConsole console, ILogger logger, string workingDirectory, IOpenShiftClientFactory clientFactory, IProjectReader projectReader)
+    public DeployHandler(IAnsiConsole console, ILogger logger, string workingDirectory, IOpenShiftClientFactory clientFactory, IProjectReader projectReader, IGitRepoReader gitRepoReader)
     {
         Console = console;
         Logger = logger;
         WorkingDirectory = workingDirectory;
         OpenShiftClientFactory = clientFactory;
         ProjectReader = projectReader;
+        GitRepoReader = gitRepoReader;
     }
 
     public async Task<int> ExecuteAsync(LoginContext login, string project, string? name, string? partOf, bool expose, CancellationToken cancellationToken)
@@ -49,7 +51,7 @@ sealed partial class DeployHandler
         Debug.Assert(projectInformation.DotnetVersion is not null);
 
         // Get git information.
-        (string? gitUri, string? gitRef) = DetermineGitRemote(contextDir);
+        GitRepoInfo? gitInfo = GitRepoReader.ReadGitRepoInfo(contextDir);
 
         name ??= DefaultName(projectInformation.AssemblyName);
 
@@ -94,7 +96,7 @@ sealed partial class DeployHandler
                                    currentService,
                                    currentDotnetImageStream,
                                    expose,
-                                   gitUri, gitRef,
+                                   gitUri: gitInfo?.RemoteUrl, gitRef: gitInfo?.RemoteBranch,
                                    componentLabels,
                                    dotnetLabels,
                                    selectorLabels,
@@ -282,38 +284,6 @@ sealed partial class DeployHandler
         name = name.Replace(".", "-").ToLowerInvariant();
 
         return name;
-    }
-
-    private static (string? gitUri, string? gitRef) DetermineGitRemote(string path)
-    {
-        return (null, null);
-        // if (!Directory.Exists(Path.Combine(path, ".git")))
-        // {
-        //     return (null, null);
-        // }
-
-        // var gitRepo = new Repository(path);
-
-        // Branch? remoteBranch = gitRepo.Head?.TrackedBranch;
-        // if (remoteBranch is null)
-        // {
-        //     return (null, null);
-        // }
-
-        // // determine gitUri
-        // string remoteName = remoteBranch.RemoteName;
-        // Remote remote = gitRepo.Network.Remotes.First(r => r.Name == remoteName);
-        // string gitUri = remote.Url;
-
-        // // determine gitRef
-        // string canonicalBranchName = remoteBranch.UpstreamBranchCanonicalName;
-        // if (!canonicalBranchName.StartsWith("refs/heads/"))
-        // {
-        //     return (null, null);
-        // }
-        // string gitRef = canonicalBranchName.Substring("refs/heads/".Length);
-
-        // return (gitUri, gitRef);
     }
 
     internal static bool IsProjectInformationUsable(IAnsiConsole Console, ProjectInformation projectInformation)

@@ -174,7 +174,8 @@ partial class AppCommandLine
                                 var services = ctx.Services;
                                 var parseResult = ctx.ParseResult;
 
-                                var handler = new DeployHandler(services.Console, services.Logger, services.WorkingDirectory, services.OpenShiftClientFactory, services.ProjectReader);
+                                var handler = new DeployHandler(services.Console, services.Logger, services.WorkingDirectory,
+                                                    services.OpenShiftClientFactory, services.ProjectReader, services.GitRepoReader);
 
                                 LoginContext loginContext = ctx.LoginContext!;
 
@@ -273,11 +274,13 @@ partial class AppCommandLine
         }
         catch (System.OperationCanceledException)
         {
+            Console.WriteLine();
             Console.WriteErrorLine("The command was aborted by the user.");
             return CommandResult.Failure;
         }
         catch (OpenShiftClientException clientException)
         {
+            Console.WriteLine();
             // Print a human-friendly message for some errors.
             if (clientException.Cause == OpenShiftClientExceptionCause.ConnectionIssue)
             {
@@ -314,10 +317,17 @@ partial class AppCommandLine
                     Console.WriteErrorLine("The server failed to execute the request.");
                     break;
             }
+            if (clientException.ResponseText is not null)
+            {
+                Console.WriteLine();
+                Console.WriteLine("Server response:");
+                Console.WriteLine(clientException.ResponseText);
+            }
             printException = clientException;
         }
         catch (System.Exception ex)
         {
+            Console.WriteLine();
             Console.WriteErrorLine("An unexpected exception occurred while handling the command.");
             printException = ex;
         }
@@ -325,8 +335,9 @@ partial class AppCommandLine
         if (printException is not null)
         {
             Console.WriteLine();
-            Console.WriteLine("The following stacktrace may help identify the problem.");
+            Console.WriteLine("Exception stack trace:");
             Console.WriteException(printException);
+            Console.WriteLine();
         }
 
         return CommandResult.Failure;
