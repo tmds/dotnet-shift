@@ -340,9 +340,9 @@ sealed partial class ListHandler
         return sb.ToString();
     }
 
-    private static bool IsSubsetOf(IDictionary<string, string> selector, IDictionary<string, string>? labels)
+    private static bool IsSubsetOf(IDictionary<string, string>? selector, IDictionary<string, string>? labels)
     {
-        if (labels is null)
+        if (selector is null || labels is null)
         {
             return false;
         }
