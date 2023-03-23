@@ -57,7 +57,7 @@ partial class AppCommandLine
             var services = ctx.Services;
             var parseResult = ctx.ParseResult;
 
-            var handler = new LoginCommandHandler(services.Console, services.Logger, services.OpenShiftClientFactory, services.KubeConfig);
+            var handler = new LoginHandler(services.Console, services.Logger, services.OpenShiftClientFactory, services.KubeConfig);
 
             string server = parseResult.GetValue(Options.RequiredServerOption)!;
             string token = parseResult.GetValue(Options.RequiredTokenOption)!;

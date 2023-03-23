@@ -1,16 +1,17 @@
 namespace CommandHandlers;
 
+using OpenShift;
 using System.Net.Http;
 using System.Security.Authentication;
 
-sealed class LoginCommandHandler
+sealed class LoginHandler
 {
     private ILogger Logger { get; }
     private IAnsiConsole Console { get; }
     private IOpenShiftClientFactory OpenShiftClientFactory { get; }
     private ILoginContextRepository KubeConfig { get; }
 
-    public LoginCommandHandler(IAnsiConsole console, ILogger logger, IOpenShiftClientFactory clientFactory, ILoginContextRepository kubeConfig)
+    public LoginHandler(IAnsiConsole console, ILogger logger, IOpenShiftClientFactory clientFactory, ILoginContextRepository kubeConfig)
     {
         Console = console;
         Logger = logger;
@@ -36,11 +37,11 @@ sealed class LoginCommandHandler
         {
             login.Username = await DetermineUserNameAsync(client, cancellationToken);
         }
-        catch (HttpRequestException ex) when (!skipVerify && ex.InnerException is AuthenticationException)
+        catch (System.Exception ex) when (!login.SkipTlsVerify && IsAuthenticationException(ex))
         {
-            // Can we log in skipping ssl verification?
-            Debug.Assert(!login.SkipTlsVerify);
+            Debug.Assert(!skipVerify);
 
+            // Can we log in skipping ssl verification?
             login.SkipTlsVerify = true;
             client = OpenShiftClientFactory.CreateClient(login);
             try
@@ -57,23 +58,27 @@ sealed class LoginCommandHandler
                     return CommandResult.Failure;
                 }
 
-                login.SkipTlsVerify = await new ConfirmationPrompt("Use insecure connections?") { DefaultValue = false }
+                skipVerify = await new ConfirmationPrompt("Use insecure connections?") { DefaultValue = false }
                                                 .ShowAsync(Console, cancellationToken);
                 Console.WriteLine();
 
-                if (!login.SkipTlsVerify)
+                if (!skipVerify)
                 {
                     Console.WriteErrorLine($"The remote server is not trusted.");
                     return CommandResult.Failure;
                 }
             }
-            catch
-            { }
+            catch (System.Exception retryEx) when (IsAuthenticationException(retryEx))
+            {
+                // Ignore and throw the original exception.
+            }
 
-            if (!login.SkipTlsVerify)
+            if (!skipVerify)
             {
                 throw;
             }
+
+            Debug.Assert(login.SkipTlsVerify);
             Debug.Assert(login.Username is not null);
         }
         Console.WriteLine($"Logged into '{server}' as '{login.Username}' using the provided token.");
@@ -155,6 +160,19 @@ sealed class LoginCommandHandler
         Console.WriteLine($"Using namespace '{login.Namespace}' on server '{uri?.Host}'.");
 
         return 0;
+
+        static bool IsAuthenticationException(System.Exception? ex)
+        {
+            while (ex is not null)
+            {
+                if (ex is AuthenticationException)
+                {
+                    return true;
+                }
+                ex = ex.InnerException;
+            }
+            return false;
+        }
     }
 
     private static async Task<string> DetermineUserNameAsync(IOpenShiftClient client, CancellationToken cancellationToken)
