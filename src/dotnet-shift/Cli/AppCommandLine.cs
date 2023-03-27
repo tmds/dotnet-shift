@@ -1,20 +1,18 @@
 using System.CommandLine;
 using System.CommandLine.Invocation;
-using System.CommandLine.IO;
 
 namespace Cli;
 
 sealed partial class AppCommandLine : CommandLine<AppContext>
 {
-    public static AppCommandLine Create(IConsole? console = null, ContextFactory<AppContext>? contextFactory = null)
+    public static AppCommandLine Create(ContextFactory<AppContext>? contextFactory = null)
     {
-        console ??= new SystemConsole();
         contextFactory ??= DefaultContextFactory;
-        return new AppCommandLine(contextFactory, console);
+        return new AppCommandLine(contextFactory);
     }
 
-    private AppCommandLine(ContextFactory<AppContext> contextFactory, IConsole console) :
-        base(contextFactory, console)
+    private AppCommandLine(ContextFactory<AppContext> contextFactory) :
+        base(contextFactory)
     {
         ContextExceptionHandler = ExceptionHandler;
         Configure(

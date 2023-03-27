@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.CommandLine.IO;
 using System.Net;
 using System.Net.Sockets;
 using CommandHandlers;
@@ -20,8 +19,7 @@ partial class AppCommandLine
 
         root.SetAction(ctx =>
         {
-            IConsole Console = ctx.Console;
-            IStandardStreamWriter Out = Console.Out;
+            var Out = ctx.ParseResult.Configuration.Output;
             Out.WriteLine("'dotnet shift' is a .NET tool for working with OpenShift.");
             Out.WriteLine("");
             Out.WriteLine("You can use it to deploy a .NET project directly to OpenShift:");

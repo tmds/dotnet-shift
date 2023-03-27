@@ -10,6 +10,9 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task<Stream> FollowBuildLogAsync(string build, CancellationToken cancellationToken)
         => ReadBuildOpenshiftIoV1NamespacedBuildLogAsync(build, Namespace, follow: true, cancellationToken: cancellationToken);
 
+    public Task<Build?> GetBuildAsync(string name, CancellationToken cancellationToken)
+        => ReadBuildOpenshiftIoV1NamespacedBuildAsync(name, Namespace, cancellationToken: cancellationToken);
+
     private async Task<Build> ConnectBuildOpenshiftIoV1PostNamespacedBuildConfigInstantiatebinaryAsync(string name, string @namespace, HttpContent content, string? asFile = null, string? revision_authorEmail = null, string? revision_authorName = null, string? revision_commit = null, string? revision_committerEmail = null, string? revision_committerName = null, string? revision_message = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
@@ -222,6 +225,93 @@ partial class OpenShiftClient : IOpenShiftClient
                     {
                         string responseText_ = (response_.Content == null) ? string.Empty : await response_.Content.ReadAsStringAsync().ConfigureAwait(false);
                         throw CreateApiException("Unauthorized", status_, responseText_, headers_, null);
+                    }
+                    else
+                    {
+                        var responseData_ = response_.Content == null ? null : await response_.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        throw CreateApiException("The HTTP status code of the response was not expected (" + status_ + ").", status_, responseData_, headers_, null);
+                    }
+                }
+                finally
+                {
+                    if (disposeResponse_)
+                        response_.Dispose();
+                }
+            }
+        }
+        finally
+        {
+            if (disposeClient_)
+                client_.Dispose();
+        }
+    }
+
+    private async Task<Build?> ReadBuildOpenshiftIoV1NamespacedBuildAsync(string name, string @namespace, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    {
+        if (name == null)
+            throw new System.ArgumentNullException("name");
+
+        if (@namespace == null)
+            throw new System.ArgumentNullException("@namespace");
+
+        var urlBuilder_ = new System.Text.StringBuilder();
+        urlBuilder_.Append(BaseUrl != null ? BaseUrl.TrimEnd('/') : "").Append("/apis/build.openshift.io/v1/namespaces/{namespace}/builds/{name}?");
+        urlBuilder_.Replace("{name}", System.Uri.EscapeDataString(ConvertToString(name, System.Globalization.CultureInfo.InvariantCulture)));
+        urlBuilder_.Replace("{namespace}", System.Uri.EscapeDataString(ConvertToString(@namespace, System.Globalization.CultureInfo.InvariantCulture)));
+        if (pretty != null)
+        {
+            urlBuilder_.Append(System.Uri.EscapeDataString("pretty") + "=").Append(System.Uri.EscapeDataString(ConvertToString(pretty, System.Globalization.CultureInfo.InvariantCulture))).Append("&");
+        }
+        urlBuilder_.Length--;
+
+        var client_ = _httpClient;
+        var disposeClient_ = false;
+        try
+        {
+            using (var request_ = new System.Net.Http.HttpRequestMessage())
+            {
+                request_.Method = new System.Net.Http.HttpMethod("GET");
+                request_.Headers.Accept.Add(System.Net.Http.Headers.MediaTypeWithQualityHeaderValue.Parse("application/json"));
+
+                PrepareRequest(client_, request_, urlBuilder_);
+
+                var url_ = urlBuilder_.ToString();
+                request_.RequestUri = new System.Uri(url_, System.UriKind.RelativeOrAbsolute);
+
+                PrepareRequest(client_, request_, url_);
+
+                var response_ = await client_.SendAsync(request_, System.Net.Http.HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+                var disposeResponse_ = true;
+                try
+                {
+                    var headers_ = System.Linq.Enumerable.ToDictionary(response_.Headers, h_ => h_.Key, h_ => h_.Value);
+                    if (response_.Content != null && response_.Content.Headers != null)
+                    {
+                        foreach (var item_ in response_.Content.Headers)
+                            headers_[item_.Key] = item_.Value;
+                    }
+
+                    ProcessResponse(client_, response_);
+
+                    var status_ = (int)response_.StatusCode;
+                    if (status_ == 200)
+                    {
+                        var objectResponse_ = await ReadObjectResponseAsync<Build>(response_, headers_, cancellationToken).ConfigureAwait(false);
+                        if (objectResponse_.Object == null)
+                        {
+                            throw CreateApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
+                        }
+                        return objectResponse_.Object;
+                    }
+                    else
+                    if (status_ == 401)
+                    {
+                        string responseText_ = ( response_.Content == null ) ? string.Empty : await response_.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        throw CreateApiException("Unauthorized", status_, responseText_, headers_, null);
+                    }
+                    else if (status_ == 404)
+                    {
+                        return null;
                     }
                     else
                     {

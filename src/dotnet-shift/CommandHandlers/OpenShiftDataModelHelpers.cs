@@ -4,9 +4,16 @@ using OpenShift;
 
 static class OpenShiftDataModelHelpers
 {
+    private static readonly string[] BuildFinishedPhases = new[]
+        {
+            "Complete",
+            "Failed",
+            "Error",
+            "Cancelled"
+        };
+
     public static string GetRouteUrl(this Route route)
         => $"http://{route.Spec.Host}"; // TODO: detect https routes.
-
 
     public static string GetName(this Route resource)
         => resource.Metadata.Name;
@@ -24,4 +31,10 @@ static class OpenShiftDataModelHelpers
         => resource.Metadata.Name;
     public static string GetName(this ImageStream resource)
         => resource.Metadata.Name;
+
+    public static bool IsBuildFinished(this Build build)
+        => BuildFinishedPhases.Contains(build.Status.Phase);
+
+    public static bool IsBuildSuccess(this Build build)
+        => build.Status.Phase == "Complete";
 }

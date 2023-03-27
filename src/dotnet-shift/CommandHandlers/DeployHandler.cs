@@ -2,8 +2,6 @@ namespace CommandHandlers;
 
 using System;
 using System.Runtime.InteropServices;
-// using LibGit2Sharp;
-using MSBuild;
 using OpenShift;
 
 sealed partial class DeployHandler
@@ -102,7 +100,40 @@ sealed partial class DeployHandler
                                    selectorLabels,
                                    cancellationToken);
 
-        await RunBuildAsync(client, binaryBuildConfigName, contextDir, projectFile, follow: true, cancellationToken);
+        Build? build = await StartBuildAsync(client, binaryBuildConfigName, contextDir, projectFile, cancellationToken);
+        string buildName = build.Metadata.Name;
+        bool follow = true;
+
+        if (follow)
+        {
+            build = await FollowBuildAsync(client, buildName, cancellationToken);
+            if (build is null)
+            {
+                Console.WriteErrorLine($"The build '{buildName}' is missing.");
+                return CommandResult.Failure;
+            }
+            Debug.Assert(build.IsBuildFinished());
+        }
+
+        if (build.IsBuildFinished() && !build.IsBuildSuccess())
+        {
+            switch (build.Status.Phase)
+            {
+                case "Failed":
+                    Console.WriteErrorLine($"The build '{buildName}' failed.");
+                    break;
+                case "Error":
+                    Console.WriteErrorLine($"The build '{buildName}' failed to start.");
+                    break;
+                case "Cancelled":
+                    Console.WriteErrorLine($"The build '{buildName}' was cancelled.");
+                    break;
+                default: // unknown phase
+                    Console.WriteErrorLine($"The build '{buildName}' did not complete: {build.Status.Phase}.");
+                    break;
+            }
+            return CommandResult.Failure;
+        }
 
         // Print Route url.
         if (expose)
@@ -117,29 +148,47 @@ sealed partial class DeployHandler
         return CommandResult.Success;
     }
 
-    private async Task RunBuildAsync(IOpenShiftClient client, string binaryBuildConfigName, string contextDir, string projectFile, bool follow, CancellationToken cancellationToken)
+    private async Task<Build?> FollowBuildAsync(IOpenShiftClient client, string buildName, CancellationToken cancellationToken)
+    {
+        // Print the build log.
+        Console.WriteLine();
+        Console.WriteLine("Build log:");
+        using Stream buildLog = await client.FollowBuildLogAsync(buildName, cancellationToken);
+        StreamReader reader = new StreamReader(buildLog);
+        string? line;
+        while ((line = await ReadLineAsync(reader, cancellationToken)) != null)
+        {
+            Console.WriteLine(line);
+        }
+        Console.WriteLine();
+
+        // Wait for the build to finish.
+        while (true)
+        {
+            Build? build = await client.GetBuildAsync(buildName, cancellationToken);
+            if (build is null)
+            {
+                return null;
+            }
+            if (build.IsBuildFinished())
+            {
+                return build;
+            }
+            await Task.Delay(100, cancellationToken);
+        }
+    }
+
+    private async Task<Build> StartBuildAsync(IOpenShiftClient client, string binaryBuildConfigName, string contextDir, string projectFile, CancellationToken cancellationToken)
     {
         Console.WriteLine("Uploading sources for build");
+
         Dictionary<string, string> buildEnvironment = new();
         // Add DOTNET_STARTUP_PROJECT.
         AddStartupProject(buildEnvironment, contextDir, projectFile);
-        using Stream archiveStream = CreateApplicationArchive(contextDir, buildEnvironment);
-        Build build = await client.StartBinaryBuildAsync(binaryBuildConfigName, archiveStream, cancellationToken);
 
-        // Print the build log.
-        if (follow)
-        {
-            Console.WriteLine();
-            Console.WriteLine("Build log:");
-            using Stream buildLog = await client.FollowBuildLogAsync(build.Metadata.Name, cancellationToken);
-            StreamReader reader = new StreamReader(buildLog);
-            string? line;
-            while ((line = await ReadLineAsync(reader, cancellationToken)) != null)
-            {
-                Console.WriteLine(line);
-            }
-            Console.WriteLine();
-        }
+        using Stream archiveStream = CreateApplicationArchive(contextDir, buildEnvironment);
+
+        return await client.StartBinaryBuildAsync(binaryBuildConfigName, archiveStream, cancellationToken);
     }
 
     private async static ValueTask<string?> ReadLineAsync(StreamReader reader, CancellationToken cancellationToken)
