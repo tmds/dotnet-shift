@@ -41,4 +41,5 @@ interface IOpenShiftClient
     Task DeleteServiceAsync(string name, CancellationToken cancellationToken);
     Task DeleteBuildConfigAsync(string name, CancellationToken cancellationToken);
     Task<PodList> ListPodsAsync(string labelSelector, CancellationToken cancellationToken);
+    Task<Build?> GetBuildAsync(string name, CancellationToken cancellationToken);
 }

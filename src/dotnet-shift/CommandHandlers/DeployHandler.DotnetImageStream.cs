@@ -17,7 +17,7 @@ sealed partial class DeployHandler
 
         if (current is null)
         {
-            Console.Write($"Adding dotnet image for .NET '{dotnetVersion}.'");
+            Console.WriteLine($"Adding dotnet image for .NET '{dotnetVersion}.'");
             await client.CreateImageStreamAsync(imageStream, cancellationToken);
         }
         else
@@ -27,7 +27,7 @@ sealed partial class DeployHandler
                 return;
             }
 
-            Console.Write($"Adding dotnet image for .NET '{dotnetVersion}.'");
+            Console.WriteLine($"Adding dotnet image for .NET '{dotnetVersion}.'");
             await client.PatchImageStreamAsync(imageStream, cancellationToken);
         }
     }
