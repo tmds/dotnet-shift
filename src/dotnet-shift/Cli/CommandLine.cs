@@ -10,7 +10,6 @@ class CommandLine<TContext>
     internal protected delegate Task<int> Handler(TContext context, CancellationToken cancellationToken);
 
     private readonly ContextFactory<TContext> _contextFactory;
-    private readonly IConsole _console;
     private CommandLineConfiguration? _config;
 
     private TContext CreateContext(InvocationContext context)
@@ -29,9 +28,8 @@ class CommandLine<TContext>
         _config = builder.Build();
     }
 
-    protected CommandLine(ContextFactory<TContext> contextFactory, IConsole console)
+    protected CommandLine(ContextFactory<TContext> contextFactory)
     {
-        _console = console;
         _contextFactory = contextFactory;
     }
 
@@ -44,7 +42,7 @@ class CommandLine<TContext>
     }
 
     public Task<int> InvokeAsync(string[] args)
-        => _config!.InvokeAsync(args, _console);
+        => _config!.InvokeAsync(args);
 
     protected class Command : System.CommandLine.Command
     {
