@@ -19,7 +19,7 @@ partial class AppCommandLine
 
         root.SetAction(ctx =>
         {
-            var Out = ctx.ParseResult.Configuration.Output;
+            var Out = ctx.Configuration.Output;
             Out.WriteLine("'dotnet shift' is a .NET tool for working with OpenShift.");
             Out.WriteLine("");
             Out.WriteLine("You can use it to deploy a .NET project directly to OpenShift:");
