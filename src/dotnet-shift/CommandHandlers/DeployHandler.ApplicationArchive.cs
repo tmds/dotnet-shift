@@ -49,9 +49,18 @@ sealed partial class DeployHandler
 
                     string basePath = di.FullName;
 
-                    // TODO: remove folders like bin, obj.
-                    foreach (FileSystemInfo file in di.EnumerateFileSystemInfos("*", SearchOption.AllDirectories))
+                    foreach (FileSystemInfo file in di.EnumerateFileSystemInfos("*",
+                        new EnumerationOptions()
+                        {
+                            RecurseSubdirectories = true,
+                            AttributesToSkip = (FileAttributes)0
+                        }))
                     {
+                        if (SkipEntry(file.FullName.AsSpan(basePath.Length), file is DirectoryInfo))
+                        {
+                            continue;
+                        }
+
                         if (file is FileInfo)
                         {
                             // Create entry for file:
@@ -74,6 +83,22 @@ sealed partial class DeployHandler
                     }
                 }
                 writer.Complete();
+
+                static bool SkipEntry(ReadOnlySpan<char> path, bool isDirectory)
+                {
+                    do
+                    {
+                        ReadOnlySpan<char> name = Path.GetFileName(path);
+                        if (isDirectory && SkipDirectoryWithName(name))
+                        {
+                            return true;
+                        }
+                        path = Path.GetDirectoryName(path);
+                        isDirectory = true;
+                    } while (!path.IsEmpty);
+
+                    return false;
+                }
 
                 static bool IsDirEmpty(DirectoryInfo possiblyEmptyDir)
                 {
@@ -130,7 +155,6 @@ sealed partial class DeployHandler
                     DirectoryInfo di = new(directory);
                     string basePath = di.FullName;
 
-                    // TODO: remove folders like bin, obj.
                     foreach (FileSystemInfo file in GetFileSystemEnumerationForCreation(directory))
                     {
                         await writer.WriteEntryAsync(file.FullName, GetEntryNameForFileSystemInfo(file, basePath.Length), cancellationToken: default).ConfigureAwait(false);
@@ -165,13 +189,21 @@ sealed partial class DeployHandler
                         transform: (ref FileSystemEntry entry) => entry.ToFileSystemInfo(),
                         options: new EnumerationOptions()
                         {
-                            RecurseSubdirectories = true
+                            RecurseSubdirectories = true,
+                            AttributesToSkip = (FileAttributes)0
                         })
                     {
-                        ShouldRecursePredicate = IsNotADirectorySymlink
+                        ShouldRecursePredicate = ShouldRecurse,
+                        ShouldIncludePredicate = ShouldInclude
                     };
 
-                    static bool IsNotADirectorySymlink(ref FileSystemEntry entry) => entry.IsDirectory && (entry.Attributes & FileAttributes.ReparsePoint) == 0;
+                    static bool ShouldRecurse(ref FileSystemEntry entry)
+                        => entry.IsDirectory && (entry.Attributes & FileAttributes.ReparsePoint) == 0
+                           && !SkipDirectoryWithName(entry.FileName);
+
+                    static bool ShouldInclude(ref FileSystemEntry entry)
+                        => !entry.IsDirectory ||
+                           !SkipDirectoryWithName(entry.FileName);
                 }
 
                 static string GetEntryNameForFileSystemInfo(FileSystemInfo file, int basePathLength)
@@ -205,6 +237,13 @@ sealed partial class DeployHandler
         }
     }
 #endif
+
+    private static bool SkipDirectoryWithName(ReadOnlySpan<char> directoryName)
+    {
+        return directoryName.SequenceEqual(".git") ||
+               directoryName.SequenceEqual("bin") || directoryName.SequenceEqual("Bin") ||
+               directoryName.SequenceEqual("obj") || directoryName.SequenceEqual("Obj");
+    }
 
     private static string GenerateS2iEnvironmentContent(string directory, Dictionary<string, string> buildEnvironment)
     {
