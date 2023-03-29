@@ -292,16 +292,6 @@ partial class AppCommandLine
                     }
                 }
             }
-            else if (clientException.Cause == OpenShiftClientExceptionCause.Failed)
-            {
-                switch (clientException.HttpStatusCode)
-                {
-                    case HttpStatusCode.Unauthorized:
-                        Console.WriteErrorLine("The credentials are not valid for performing the requested operation.");
-                        Console.WriteLine("Your credentials may have expired. You can use the 'login' command to update your credentials.");
-                        return CommandResult.Failure;
-                }
-            }
 
             switch (clientException.Cause)
             {
@@ -312,14 +302,22 @@ partial class AppCommandLine
                     Console.WriteErrorLine("The server response was not understood.");
                     break;
                 case OpenShiftClientExceptionCause.Failed:
-                    Console.WriteErrorLine("The server failed to execute the request.");
+                    if (clientException.HttpStatusCode == HttpStatusCode.Unauthorized)
+                    {
+                        Console.WriteErrorLine("The credentials are not valid for performing the requested operation.");
+                        Console.WriteLine("Your credentials may have expired. You can use the 'login' command to update your credentials.");
+                    }
+                    else
+                    {
+                        Console.WriteErrorLine("The server failed to execute the request.");
+                    }
                     break;
             }
             if (clientException.ResponseText is not null)
             {
                 Console.WriteLine();
                 Console.WriteLine("Server response:");
-                Console.WriteLine(clientException.ResponseText);
+                Console.WriteLine(clientException.ResponseText.Trim(new[] { '\n', '\r' } ));
             }
             printException = clientException;
         }
