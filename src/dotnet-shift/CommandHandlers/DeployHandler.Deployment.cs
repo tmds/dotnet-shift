@@ -8,7 +8,7 @@ sealed partial class DeployHandler
     private const string ContainerName = "app";
     private const string AppConfigMountPath = "/config";
 
-    private async Task ApplyAppDeployment(
+    private async Task<Deployment> ApplyAppDeployment(
         IOpenShiftClient client,
         string name,
         Deployment? current,
@@ -28,11 +28,11 @@ sealed partial class DeployHandler
 
         if (current is null)
         {
-            await client.CreateDeploymentAsync(deployment, cancellationToken);
+            return await client.CreateDeploymentAsync(deployment, cancellationToken);
         }
         else
         {
-            await client.PatchDeploymentAsync(deployment, cancellationToken);
+            return await client.PatchDeploymentAsync(deployment, cancellationToken);
         }
     }
 

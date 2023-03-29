@@ -23,6 +23,17 @@ sealed partial class DeployHandler
         GitRepoReader = gitRepoReader;
     }
 
+    sealed class ComponentResources
+    {
+        public Deployment? Deployment { get; init; }
+        public BuildConfig? BinaryBuildConfig { get; init; }
+        public ConfigMap? ConfigMap { get; init; }
+        public ImageStream? ImageStream { get; init; }
+        public Route? Route { get; init; }
+        public Service? Service { get; init; }
+        public ImageStream? S2iImageStream { get; init; }
+    }
+
     public async Task<int> ExecuteAsync(LoginContext login, string project, string? name, string? partOf, bool expose, CancellationToken cancellationToken)
     {
         // Find the .NET project file.
@@ -35,10 +46,6 @@ sealed partial class DeployHandler
         // Find the context directory.
         string projectFileDirectory = Path.GetDirectoryName(projectFile)!;
         string contextDir = FindContextDirectory(projectFileDirectory);
-        if (contextDir != projectFileDirectory)
-        {
-            Console.WriteLine($"Using context directory '{contextDir}'");
-        }
 
         // Read the .NET project.
         ProjectInformation projectInformation = ProjectReader.ReadProjectInfo(projectFile);
@@ -54,57 +61,34 @@ sealed partial class DeployHandler
 
         // Resource names.
         name ??= DefaultName(projectInformation.AssemblyName);
-        string binaryBuildConfigName = $"{name}-binary";
+        string binaryBuildConfigName = GetBinaryConfigName(name);
 
+        Console.WriteLine($"Using namespace '{login.Namespace}' at '{login.Server}'.");
+        Console.WriteLine();
         IOpenShiftClient client = OpenShiftClientFactory.CreateClient(login);
 
         // Get the currently deployed resources.
-        string? currentPartOf = null;
-        Deployment? currentDeployment = await client.GetDeploymentAsync(name, cancellationToken);
-        currentPartOf ??= GetPartOf(currentDeployment?.Metadata?.Labels);
-        BuildConfig? currentBuildConfig = await client.GetBuildConfigAsync(binaryBuildConfigName, cancellationToken);
-        ConfigMap? currentConfigMap = await client.GetConfigMapAsync(name, cancellationToken);
-        ImageStream? currentAppImageStream = await client.GetImageStreamAsync(name, cancellationToken);
-        Route? currentRoute = await client.GetRouteAsync(name, cancellationToken);
-        Service? currentService = await client.GetServiceAsync(name, cancellationToken);
-        ImageStream? currentDotnetImageStream = await client.GetImageStreamAsync(DotnetImageStreamName, cancellationToken);
+        Console.WriteLine($"Retrieving existing resources for '{name}'...");
+        ComponentResources resources = await GetDeployedResources(client, name, binaryBuildConfigName, ResourceLabelValues.DotnetRuntime, cancellationToken);
 
-        // Update the route when the application was already exposed.
-        expose = expose || currentRoute is not null;
         // If partOf was not set, default to the application of existing resources,
         // or the name of the deployment.
-        partOf ??= currentPartOf ?? name;
+        partOf ??= GetPartOf(resources.Deployment?.Metadata?.Labels) ?? name;
 
-        Dictionary<string, string> componentLabels = GetComponentLabels(partOf, name);
-        Dictionary<string, string> dotnetLabels = GetDotnetLabels();
-        Dictionary<string, string> selectorLabels = GetSelectorLabels(name);
-        string appImageStreamTagName = $"{name}:latest";
-        string dotnetVersion = projectInformation.DotnetVersion;
+        Console.WriteLine("Updating resources...");
+        Console.WriteLine();
+        resources = await UpdateResourcesAsync(client, resources, name, binaryBuildConfigName,
+                                    ResourceLabelValues.DotnetRuntime, projectInformation.DotnetVersion,
+                                    gitUri: gitInfo?.RemoteUrl, gitRef: gitInfo?.RemoteBranch,
+                                    partOf, expose, cancellationToken);
 
-        Console.WriteLine("Updating resources");
-        await UpdateResourcesAsync(client,
-                                   name,
-                                   binaryBuildConfigName,
-                                   appImageStreamTagName,
-                                   dotnetVersion,
-                                   currentDeployment,
-                                   currentBuildConfig,
-                                   currentConfigMap,
-                                   currentAppImageStream,
-                                   currentRoute,
-                                   currentService,
-                                   currentDotnetImageStream,
-                                   expose,
-                                   gitUri: gitInfo?.RemoteUrl, gitRef: gitInfo?.RemoteBranch,
-                                   componentLabels,
-                                   dotnetLabels,
-                                   selectorLabels,
-                                   cancellationToken);
-
+        // Start the build.
+        Console.WriteLine($"Uploading sources from '{contextDir}'...");
         Build? build = await StartBuildAsync(client, binaryBuildConfigName, contextDir, projectFile, cancellationToken);
         string buildName = build.Metadata.Name;
         bool follow = true;
 
+        // Follow the build.
         if (follow)
         {
             build = await FollowBuildAsync(client, buildName, cancellationToken);
@@ -116,7 +100,37 @@ sealed partial class DeployHandler
             Debug.Assert(build.IsBuildFinished());
         }
 
-        string? builtImage = null;
+        // Report build fail/success.
+        if (!CheckBuildNotFailed(build, out string? builtImage))
+        {
+            return CommandResult.Failure;
+        }
+
+        // Follow the deployment.
+        if (follow)
+        {
+            Debug.Assert(builtImage is not null);
+            if (!await TryFollowDeploymentAsync(client, deploymentName: name, builtImage, cancellationToken))
+            {
+                return CommandResult.Failure;
+            }
+        }
+
+        // Print Route url.
+        if (resources.Route is { } route)
+        {
+            Console.WriteLine();
+            Console.WriteLine($"The application can be reached at '{route.GetRouteUrl()}'");
+        }
+
+        return CommandResult.Success;
+    }
+
+    private bool CheckBuildNotFailed(Build build, out string? builtImage)
+    {
+        builtImage = null;
+
+        string buildName = build.Metadata.Name;
         if (build.IsBuildFinished())
         {
             if (!build.IsBuildSuccess())
@@ -138,38 +152,42 @@ sealed partial class DeployHandler
                         Console.WriteErrorLine($"The build '{buildName}' did not complete: {build.Status.Phase}{withReason}.");
                         break;
                 }
-                return CommandResult.Failure;
+                return false;
             }
             else
             {
                 string imageReference = build.Status.OutputDockerImageReference;
                 string imageDigest = build.Status.Output.To.ImageDigest;
                 builtImage = $"{imageReference.Substring(0, imageReference.LastIndexOf(':'))}@{imageDigest}";
-                Console.WriteLine($"The build '{buildName}' succesfully built '{builtImage}'.");
             }
         }
 
-        if (follow)
-        {
-            Debug.Assert(builtImage is not null);
-            if (!await TryFollowDeploymentAsync(client, deploymentName: name, builtImage, cancellationToken))
-            {
-                return CommandResult.Failure;
-            }
-        }
-
-        // Print Route url.
-        if (expose)
-        {
-            Route? route = await client.GetRouteAsync(name, cancellationToken);
-            if (route is not null)
-            {
-                Console.WriteLine($"The application can be reached at '{route.GetRouteUrl()}'");
-            }
-        }
-
-        return CommandResult.Success;
+        return true;
     }
+
+    private async Task<ComponentResources> GetDeployedResources(IOpenShiftClient client, string name, string? binaryBuildConfigName, string? runtime, CancellationToken cancellationToken)
+    {
+        Deployment? deployment = await client.GetDeploymentAsync(name, cancellationToken);
+        BuildConfig? binaryBuildConfig = binaryBuildConfigName is null ? null : await client.GetBuildConfigAsync(binaryBuildConfigName, cancellationToken);
+        ConfigMap? configMap = await client.GetConfigMapAsync(name, cancellationToken);
+        ImageStream? imageStream = await client.GetImageStreamAsync(name, cancellationToken);
+        Route? route = await client.GetRouteAsync(name, cancellationToken);
+        Service? service = await client.GetServiceAsync(name, cancellationToken);
+        ImageStream? s2iImageStream = runtime is null ? null : await client.GetImageStreamAsync(GetS2iImageStreamName(runtime), cancellationToken);
+
+        return new ComponentResources()
+        {
+            Deployment = deployment,
+            BinaryBuildConfig = binaryBuildConfig,
+            ConfigMap = configMap,
+            ImageStream = imageStream,
+            Route = route,
+            Service = service,
+            S2iImageStream = s2iImageStream
+        };
+    }
+
+    private static string GetS2iImageStreamName(string runtime) => runtime;
 
     private async Task<bool> TryFollowDeploymentAsync(IOpenShiftClient client, string deploymentName, string builtImage, CancellationToken cancellationToken)
     {
@@ -198,7 +216,7 @@ sealed partial class DeployHandler
 
                 if (isImageDeployed)
                 {
-                    Console.WriteLine($"The deployment '{deploymentName}' is deploying the image that was built.");
+                    Console.WriteLine($"The image is being deployed.");
                 }
             }
             else if (deployedImage != builtImage)
@@ -236,15 +254,15 @@ sealed partial class DeployHandler
                     if (progressCondition.Reason == "NewReplicaSetAvailable")
                     {
                         // Completed successfully.
-                        Console.WriteLine($"The deployment completed successfully.");
+                        Console.WriteLine($"The deployment finished successfully.");
                         return true;
                     }
 
                     // Print a message if progress changes.
-                    if (HasConditionChanged(previousProgressCondition, progressCondition))
-                    {
-                        Console.WriteLine($"The deployment is progressing{DescribeConditionAsWith(progressCondition)}.");
-                    }
+                    // if (HasConditionChanged(previousProgressCondition, progressCondition))
+                    // {
+                    //     Console.WriteLine($"The deployment is progressing{DescribeConditionAsWith(progressCondition)}.");
+                    // }
                 }
 
                 // Report on replica set issues.
@@ -324,14 +342,17 @@ sealed partial class DeployHandler
     private async Task<Build?> FollowBuildAsync(IOpenShiftClient client, string buildName, CancellationToken cancellationToken)
     {
         // Print the build log.
-        Console.WriteLine();
-        Console.WriteLine("Build log:");
+        Console.WriteLine("The build is running:");
         using Stream buildLog = await client.FollowBuildLogAsync(buildName, cancellationToken);
         StreamReader reader = new StreamReader(buildLog);
         string? line;
         while ((line = await ReadLineAsync(reader, cancellationToken)) != null)
         {
-            Console.WriteLine(line);
+            // Omit empty lines so the build log appears contiguous in the output. 
+            if (!line.AsSpan().Trim(' ').IsEmpty)
+            {
+                Console.WriteLine(line);
+            }
         }
         Console.WriteLine();
 
@@ -353,8 +374,6 @@ sealed partial class DeployHandler
 
     private async Task<Build> StartBuildAsync(IOpenShiftClient client, string binaryBuildConfigName, string contextDir, string projectFile, CancellationToken cancellationToken)
     {
-        Console.WriteLine("Uploading sources for build");
-
         Dictionary<string, string> buildEnvironment = new();
         // Add DOTNET_STARTUP_PROJECT.
         AddStartupProject(buildEnvironment, contextDir, projectFile);
@@ -375,82 +394,97 @@ sealed partial class DeployHandler
 #endif
     }
 
-    private async Task UpdateResourcesAsync(IOpenShiftClient client,
+    private async Task<ComponentResources> UpdateResourcesAsync(IOpenShiftClient client,
+                                            ComponentResources current,
                                             string name,
                                             string binaryBuildConfigName,
-                                            string appImageStreamTagName,
-                                            string dotnetVersion,
-                                            Deployment? currentDeployment,
-                                            BuildConfig? currentBuildConfig,
-                                            ConfigMap? currentConfigMap,
-                                            ImageStream? currentAppImageStream,
-                                            Route? currentRoute,
-                                            Service? currentService,
-                                            ImageStream? currentDotnetImageStream,
-                                            bool expose,
+                                            string runtime, string runtimeVersion,
                                             string? gitUri, string? gitRef,
-                                            Dictionary<string, string> componentLabels,
-                                            Dictionary<string, string> dotnetLabels,
-                                            Dictionary<string, string> selectorLabels,
+                                            string partOf, bool expose,
                                             CancellationToken cancellationToken)
     {
+        // Update the route when the application was already exposed.
+        expose = expose || current.Route is not null;
+
+        Dictionary<string, string> componentLabels = GetComponentLabels(partOf, name);
+        Dictionary<string, string> runtimeLabels = GetRuntimeLabels(runtime, runtimeVersion);
+        Dictionary<string, string> selectorLabels = GetSelectorLabels(name);
+
+        string appImageStreamTagName = $"{name}:latest";
+
         // Order this reverse to the Delete order:
         // First BuildConfig, then DeploymentConfig, then the rest.
-        await ApplyBinaryBuildConfig(
-            client,
-            binaryBuildConfigName,
-            currentBuildConfig,
-            appImageStreamTagName,
-            s2iImageStreamTag: $"{DotnetImageStreamName}:{dotnetVersion}",
-            Merge(componentLabels, dotnetLabels),
-            cancellationToken);
-        await ApplyAppDeployment(
-            client,
-            name,
-            currentDeployment,
-            appImageStreamTagName,
-            gitUri, gitRef,
-            Merge(componentLabels, dotnetLabels),
-            selectorLabels,
-            cancellationToken
-        );
+        BuildConfig binaryBuildConfig = await ApplyBinaryBuildConfig(
+                                            client,
+                                            binaryBuildConfigName,
+                                            current.BinaryBuildConfig,
+                                            appImageStreamTagName,
+                                            s2iImageStreamTag: $"{GetS2iImageStreamName(runtime)}:{runtimeVersion}",
+                                            Merge(componentLabels, runtimeLabels),
+                                            cancellationToken);
 
-        if (currentConfigMap is null)
+        Deployment? deployment = await ApplyAppDeployment(
+                                        client,
+                                        name,
+                                        current.Deployment,
+                                        appImageStreamTagName,
+                                        gitUri, gitRef,
+                                        Merge(componentLabels, runtimeLabels),
+                                        selectorLabels,
+                                        cancellationToken
+                                    );
+
+        ConfigMap? configMap = current.ConfigMap;
+        if (current.ConfigMap is null)
         {
-            Console.WriteLine($"Creating ConfigMap '{name}'");
-            await CreateAppConfigMap(client,
+            configMap = await CreateAppConfigMap(
+                                    client,
                                     name,
                                     componentLabels,
                                     cancellationToken);
         }
 
-        await ApplyDotnetImageStreamTag(client,
-                                        currentDotnetImageStream,
-                                        dotnetVersion,
+        Debug.Assert(runtime == ResourceLabelValues.DotnetRuntime);
+        ImageStream? s2iImageStream = await ApplyDotnetImageStreamTag(
+                                        client,
+                                        current.S2iImageStream,
+                                        runtimeVersion,
                                         cancellationToken);
 
-        await ApplyAppImageStream(client,
+        ImageStream? imageStream = await ApplyAppImageStream(client,
                                   name,
-                                  currentAppImageStream,
+                                  current.ImageStream,
                                   componentLabels,
                                   cancellationToken);
 
+        Route? route = null;
         if (expose)
         {
-            await ApplyAppRoute(client,
+            route = await ApplyAppRoute(client,
                                 name,
-                                currentRoute,
+                                current.Route,
                                 serviceName: name,
                                 componentLabels,
                                 cancellationToken);
         }
 
-        await ApplyAppService(client,
+        Service service = await ApplyAppService(client,
                               name,
-                              currentService,
+                              current.Service,
                               componentLabels,
                               selectorLabels,
                               cancellationToken);
+
+        return new ComponentResources()
+        {
+            Deployment = deployment,
+            BinaryBuildConfig = binaryBuildConfig,
+            ConfigMap = configMap,
+            ImageStream = imageStream,
+            Route = route,
+            Service = service,
+            S2iImageStream = s2iImageStream
+        };
     }
 
     private string? GetPartOf(IDictionary<string, string>? labels)
@@ -480,11 +514,11 @@ sealed partial class DeployHandler
         return labels;
     }
 
-    private static Dictionary<string, string> GetDotnetLabels()
+    private static Dictionary<string, string> GetRuntimeLabels(string runtime, string runtimeVersion)
     {
         Dictionary<string, string> labels = new();
 
-        labels[ResourceLabels.Runtime] = ResourceLabelValues.DotnetRuntime;
+        labels[ResourceLabels.Runtime] = runtime;
 
         return labels;
     }
@@ -602,4 +636,6 @@ sealed partial class DeployHandler
             } while (true);
         }
     }
+
+    private string GetBinaryConfigName(string componentName) => $"{componentName}-binary";
 }

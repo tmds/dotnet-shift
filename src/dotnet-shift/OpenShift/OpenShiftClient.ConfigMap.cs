@@ -6,7 +6,7 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task<ConfigMap?> GetConfigMapAsync(string name, CancellationToken cancellationToken)
         => ReadCoreV1NamespacedConfigMapAsync(name, Namespace, cancellationToken: cancellationToken);
 
-    public Task CreateConfigMapAsync(ConfigMap configMap, CancellationToken cancellationToken)
+    public Task<ConfigMap> CreateConfigMapAsync(ConfigMap configMap, CancellationToken cancellationToken)
         => CreateCoreV1NamespacedConfigMapAsync(configMap, Namespace, cancellationToken: cancellationToken);
 
     public Task<ConfigMapList> ListConfigMapsAsync(string labelSelector, CancellationToken cancellationToken)

@@ -6,7 +6,7 @@ sealed partial class DeployHandler
 {
     private const string DotnetImageStreamName = "dotnet";
 
-    private async Task ApplyDotnetImageStreamTag(
+    private async Task<ImageStream> ApplyDotnetImageStreamTag(
         IOpenShiftClient client,
         ImageStream? current,
         string dotnetVersion,
@@ -17,18 +17,16 @@ sealed partial class DeployHandler
 
         if (current is null)
         {
-            Console.WriteLine($"Adding dotnet image for .NET '{dotnetVersion}.'");
-            await client.CreateImageStreamAsync(imageStream, cancellationToken);
+            return await client.CreateImageStreamAsync(imageStream, cancellationToken);
         }
         else
         {
             if (current.Spec.Tags.Any(t => t.Name == dotnetVersion))
             {
-                return;
+                return current;
             }
 
-            Console.WriteLine($"Adding dotnet image for .NET '{dotnetVersion}.'");
-            await client.PatchImageStreamAsync(imageStream, cancellationToken);
+            return await client.PatchImageStreamAsync(imageStream, cancellationToken);
         }
     }
 
