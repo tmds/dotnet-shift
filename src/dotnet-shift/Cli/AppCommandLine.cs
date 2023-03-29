@@ -17,12 +17,9 @@ sealed partial class AppCommandLine : CommandLine<AppContext>
         ContextExceptionHandler = ExceptionHandler;
         Configure(
             CreateRootCommand(),
-            builder =>
-            {
-                builder.UseDefaults();
-            });
+            builder =>{ });
     }
 
-    private static AppContext DefaultContextFactory(InvocationContext invocationContext)
-        => new AppContext(invocationContext.ParseResult, new AppServices());
+    private static AppContext DefaultContextFactory(ParseResult parseResult)
+        => new AppContext(parseResult, new AppServices());
 }

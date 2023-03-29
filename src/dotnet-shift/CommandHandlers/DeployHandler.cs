@@ -25,6 +25,7 @@ sealed partial class DeployHandler
 
     public async Task<int> ExecuteAsync(LoginContext login, string project, string? name, string? partOf, bool expose, CancellationToken cancellationToken)
     {
+        // Find the .NET project file.
         if (!TryFindProjectFile(WorkingDirectory, project, out string? projectFile))
         {
             Console.WriteErrorLine($"Project '{project}' not found.");
@@ -51,13 +52,13 @@ sealed partial class DeployHandler
         // Get git information.
         GitRepoInfo? gitInfo = GitRepoReader.ReadGitRepoInfo(contextDir);
 
+        // Resource names.
         name ??= DefaultName(projectInformation.AssemblyName);
+        string binaryBuildConfigName = $"{name}-binary";
 
         IOpenShiftClient client = OpenShiftClientFactory.CreateClient(login);
 
-        string binaryBuildConfigName = $"{name}-binary";
-
-        // Get the currently deployed resources for the name.
+        // Get the currently deployed resources.
         string? currentPartOf = null;
         Deployment? currentDeployment = await client.GetDeploymentAsync(name, cancellationToken);
         currentPartOf ??= GetPartOf(currentDeployment?.Metadata?.Labels);
@@ -115,24 +116,46 @@ sealed partial class DeployHandler
             Debug.Assert(build.IsBuildFinished());
         }
 
-        if (build.IsBuildFinished() && !build.IsBuildSuccess())
+        string? builtImage = null;
+        if (build.IsBuildFinished())
         {
-            switch (build.Status.Phase)
+            if (!build.IsBuildSuccess())
             {
-                case "Failed":
-                    Console.WriteErrorLine($"The build '{buildName}' failed.");
-                    break;
-                case "Error":
-                    Console.WriteErrorLine($"The build '{buildName}' failed to start.");
-                    break;
-                case "Cancelled":
-                    Console.WriteErrorLine($"The build '{buildName}' was cancelled.");
-                    break;
-                default: // unknown phase
-                    Console.WriteErrorLine($"The build '{buildName}' did not complete: {build.Status.Phase}.");
-                    break;
+                BuildCondition? failureCondition = build.Status.Conditions.FirstOrDefault(c => c.Type == build.Status.Phase);
+                string withReason = DescribeConditionAsWith(failureCondition);
+                switch (build.Status.Phase)
+                {
+                    case "Failed":
+                        Console.WriteErrorLine($"The build '{buildName}' failed{withReason}.");
+                        break;
+                    case "Error":
+                        Console.WriteErrorLine($"The build '{buildName}' failed to start{withReason}.");
+                        break;
+                    case "Cancelled":
+                        Console.WriteErrorLine($"The build '{buildName}' was cancelled{withReason}.");
+                        break;
+                    default: // unknown phase
+                        Console.WriteErrorLine($"The build '{buildName}' did not complete: {build.Status.Phase}{withReason}.");
+                        break;
+                }
+                return CommandResult.Failure;
             }
-            return CommandResult.Failure;
+            else
+            {
+                string imageReference = build.Status.OutputDockerImageReference;
+                string imageDigest = build.Status.Output.To.ImageDigest;
+                builtImage = $"{imageReference.Substring(0, imageReference.LastIndexOf(':'))}@{imageDigest}";
+                Console.WriteLine($"The build '{buildName}' succesfully built '{builtImage}'.");
+            }
+        }
+
+        if (follow)
+        {
+            Debug.Assert(builtImage is not null);
+            if (!await TryFollowDeploymentAsync(client, deploymentName: name, builtImage, cancellationToken))
+            {
+                return CommandResult.Failure;
+            }
         }
 
         // Print Route url.
@@ -146,6 +169,156 @@ sealed partial class DeployHandler
         }
 
         return CommandResult.Success;
+    }
+
+    private async Task<bool> TryFollowDeploymentAsync(IOpenShiftClient client, string deploymentName, string builtImage, CancellationToken cancellationToken)
+    {
+        bool isImageDeployed = false;
+        bool printedImageNotYetDeployedShort = false;
+        DeploymentCondition2? previousProgressCondition = null, previousReplicaFailureCondition = null;
+
+        Stopwatch stopwatch = new();
+        stopwatch.Start();
+
+        while (true)
+        {
+            // Get the deployment.
+            Deployment? deployment = await client.GetDeploymentAsync(deploymentName, cancellationToken);
+            if (deployment is null)
+            {
+                Console.WriteErrorLine($"The deployment '{deploymentName}' is missing.");
+                return false;
+            }
+
+            // Check if we're deploying the right image.
+            string? deployedImage = deployment.Spec.Template.Spec.Containers.FirstOrDefault(c => c.Name == ContainerName)?.Image;
+            if (!isImageDeployed)
+            {
+                isImageDeployed = deployedImage == builtImage;
+
+                if (isImageDeployed)
+                {
+                    Console.WriteLine($"The deployment '{deploymentName}' is deploying the image that was built.");
+                }
+            }
+            else if (deployedImage != builtImage)
+            {
+                Console.WriteErrorLine($"The deployment '{deploymentName}' has changed to deploy image '{deployedImage}' instead of the image that was built.");
+                return false;
+            }
+
+            // Wait for the image to get deployed.
+            if (!isImageDeployed)
+            {
+                TimeSpan elapsed = stopwatch.Elapsed;
+
+                // Print a message if the deployment doesn't pick up the built image after a short time.
+                if (!printedImageNotYetDeployedShort &&
+                    elapsed > TimeSpan.FromSeconds(5))
+                {
+                    printedImageNotYetDeployedShort = true;
+                    Console.WriteLine($"Waiting for the deployment '{deploymentName}' to start deploying the image that was built...");
+                }
+
+                continue;
+            }
+
+            // Follow up on the deployment progess.
+            Debug.Assert(isImageDeployed);
+            if (deployment.Metadata.Generation == deployment.Status.ObservedGeneration)
+            {
+                DeploymentCondition2? progressCondition = deployment.Status.Conditions.FirstOrDefault(c => c.Type == "Progressing");
+                DeploymentCondition2? replicaFailureCondition = deployment.Status.Conditions.FirstOrDefault(c => c.Type == "ReplicaFailure");
+
+                // Check for progress.
+                if (progressCondition?.Status == "True")
+                {
+                    if (progressCondition.Reason == "NewReplicaSetAvailable")
+                    {
+                        // Completed successfully.
+                        Console.WriteLine($"The deployment completed successfully.");
+                        return true;
+                    }
+
+                    // Print a message if progress changes.
+                    if (HasConditionChanged(previousProgressCondition, progressCondition))
+                    {
+                        Console.WriteLine($"The deployment is progressing{DescribeConditionAsWith(progressCondition)}.");
+                    }
+                }
+
+                // Report on replica set issues.
+                if (replicaFailureCondition?.Status == "True")
+                {
+                    // Print a message if the error changes.
+                    if (HasConditionChanged(previousReplicaFailureCondition, replicaFailureCondition))
+                    {
+                        Console.WriteErrorLine($"The deployment '{deploymentName}' replica set is failing{DescribeConditionAsWith(replicaFailureCondition)}.");
+                    }
+                }
+                else if (replicaFailureCondition?.Status == "False")
+                {
+                    // Print a message when the error is gone.
+                    if (previousReplicaFailureCondition?.Status == "True")
+                    {
+                        Console.WriteLine($"The deployment '{deploymentName}' replica set is no longer failing.");
+                    }
+                }
+
+                // Check for no progress.
+                if (progressCondition?.Status == "False")
+                {
+                    // Completed when no more progress.
+                    Console.WriteErrorLine($"The deployment '{deploymentName}' failed{DescribeConditionAsWith(progressCondition)}.");
+                    return false;
+                }
+
+                previousProgressCondition = progressCondition;
+                previousReplicaFailureCondition = replicaFailureCondition;
+            }
+
+            await Task.Delay(100);
+        }
+
+        static bool HasConditionChanged(DeploymentCondition2? previousCondition, DeploymentCondition2 newCondition)
+            => previousCondition is null ||
+                previousCondition.Status != newCondition.Status ||
+                previousCondition.Reason != newCondition.Reason ||
+                previousCondition.Message != newCondition.Message;
+    }
+
+    private static string DescribeConditionAsWith(BuildCondition? failureCondition)
+    {
+        string? reason = failureCondition?.Reason;
+        string? message = failureCondition?.Message;
+        string withReason = "";
+        if (reason is not null)
+        {
+            withReason = $" with '{reason}'";
+            if (message is not null)
+            {
+                withReason += $": \"{message}\"";
+            }
+        }
+
+        return withReason;
+    }
+
+    private static string DescribeConditionAsWith(DeploymentCondition2? failureCondition)
+    {
+        string? reason = failureCondition?.Reason;
+        string? message = failureCondition?.Message;
+        string withReason = "";
+        if (reason is not null)
+        {
+            withReason = $" with '{reason}'";
+            if (message is not null)
+            {
+                withReason += $": \"{message}\"";
+            }
+        }
+
+        return withReason;
     }
 
     private async Task<Build?> FollowBuildAsync(IOpenShiftClient client, string buildName, CancellationToken cancellationToken)

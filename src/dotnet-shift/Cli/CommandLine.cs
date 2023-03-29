@@ -3,7 +3,7 @@ using System.CommandLine.Invocation;
 
 namespace Cli;
 
-delegate TContext ContextFactory<TContext>(InvocationContext context);
+delegate TContext ContextFactory<TContext>(ParseResult parseResult);
 
 class CommandLine<TContext>
 {
@@ -12,20 +12,19 @@ class CommandLine<TContext>
     private readonly ContextFactory<TContext> _contextFactory;
     private CommandLineConfiguration? _config;
 
-    private TContext CreateContext(InvocationContext context)
-        => _contextFactory(context);
+    private TContext CreateContext(ParseResult parseResult)
+        => _contextFactory(parseResult);
 
     protected Filter? ContextExceptionHandler { get; set; }
 
-    protected void Configure(RootCommand command, System.Action<CommandLineBuilder> configure)
+    protected void Configure(RootCommand command, System.Action<CommandLineConfiguration> configure)
     {
         if (_config is not null)
         {
             throw new System.InvalidOperationException();
         }
-        var builder = new CommandLineBuilder(command);
-        configure?.Invoke(builder);
-        _config = builder.Build();
+        _config = new CommandLineConfiguration(command);
+        configure?.Invoke(_config);
     }
 
     protected CommandLine(ContextFactory<TContext> contextFactory)
@@ -68,12 +67,12 @@ class CommandLine<TContext>
             public MyCliAction(CommandLine<TContext> commandLine, Handler handler)
                 => (_commandLine, Handler) = (commandLine, handler);
 
-            public override int Invoke(InvocationContext context)
-                => InvokeAsync(context, default).GetAwaiter().GetResult();
+            public override int Invoke(ParseResult parseResult)
+                => InvokeAsync(parseResult, default).GetAwaiter().GetResult();
 
-            public override Task<int> InvokeAsync(InvocationContext context, CancellationToken cancellationToken = default)
+            public override Task<int> InvokeAsync(ParseResult parseResult, CancellationToken cancellationToken = default)
             {
-                TContext ctx = _commandLine.CreateContext(context);
+                TContext ctx = _commandLine.CreateContext(parseResult);
                 if (_commandLine.ContextExceptionHandler is { } eh)
                     return eh(ctx, (c, ct) => Handler(c, ct), cancellationToken);
                 else
