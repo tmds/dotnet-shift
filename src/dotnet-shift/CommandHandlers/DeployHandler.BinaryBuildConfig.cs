@@ -4,7 +4,7 @@ using OpenShift;
 
 sealed partial class DeployHandler
 {
-    private async Task ApplyBinaryBuildConfig(
+    private async Task<BuildConfig> ApplyBinaryBuildConfig(
         IOpenShiftClient client,
         string name,
         BuildConfig? current,
@@ -22,11 +22,11 @@ sealed partial class DeployHandler
 
         if (current is null)
         {
-            await client.CreateBuildConfigAsync(buildConfig, cancellationToken);
+            return await client.CreateBuildConfigAsync(buildConfig, cancellationToken);
         }
         else
         {
-            await client.PatchBuildConfigAsync(buildConfig, cancellationToken);
+            return await client.PatchBuildConfigAsync(buildConfig, cancellationToken);
         }
     }
 

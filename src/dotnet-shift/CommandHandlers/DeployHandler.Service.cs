@@ -4,7 +4,7 @@ using OpenShift;
 
 sealed partial class DeployHandler
 {
-    private async Task ApplyAppService(
+    private async Task<Service> ApplyAppService(
         IOpenShiftClient client,
         string name,
         Service? current,
@@ -20,11 +20,11 @@ sealed partial class DeployHandler
 
         if (current is null)
         {
-            await client.CreateServiceAsync(service, cancellationToken);
+            return await client.CreateServiceAsync(service, cancellationToken);
         }
         else
         {
-            await client.PatchServiceAsync(service, cancellationToken);
+            return await client.PatchServiceAsync(service, cancellationToken);
         }
     }
 

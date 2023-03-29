@@ -5,10 +5,10 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task<BuildConfig?> GetBuildConfigAsync(string name, CancellationToken cancellationToken)
         => ReadBuildOpenshiftIoV1NamespacedBuildConfigAsync(name, Namespace, cancellationToken: cancellationToken);
 
-    public Task CreateBuildConfigAsync(BuildConfig buildConfig, CancellationToken cancellationToken)
+    public Task<BuildConfig> CreateBuildConfigAsync(BuildConfig buildConfig, CancellationToken cancellationToken)
         => CreateBuildOpenshiftIoV1NamespacedBuildConfigAsync(buildConfig, Namespace, cancellationToken: cancellationToken);
 
-    public Task PatchBuildConfigAsync(BuildConfig buildConfig, CancellationToken cancellationToken)
+    public Task<BuildConfig> PatchBuildConfigAsync(BuildConfig buildConfig, CancellationToken cancellationToken)
         => PatchBuildOpenshiftIoV1NamespacedBuildConfigAsync(buildConfig, buildConfig.Metadata.Name, Namespace, cancellationToken: cancellationToken);
 
     public Task<BuildConfigList> ListBuildConfigsAsync(string labelSelector, CancellationToken cancellationToken)

@@ -5,10 +5,10 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task<ImageStream?> GetImageStreamAsync(string name, CancellationToken cancellationToken)
         => ReadImageOpenshiftIoV1NamespacedImageStreamAsync(name, Namespace, cancellationToken: cancellationToken);
 
-    public Task CreateImageStreamAsync(ImageStream imageStream, CancellationToken cancellationToken)
+    public Task<ImageStream> CreateImageStreamAsync(ImageStream imageStream, CancellationToken cancellationToken)
         => CreateImageOpenshiftIoV1NamespacedImageStreamAsync(imageStream, Namespace, cancellationToken: cancellationToken);
 
-    public Task PatchImageStreamAsync(ImageStream imageStream, CancellationToken cancellationToken)
+    public Task<ImageStream> PatchImageStreamAsync(ImageStream imageStream, CancellationToken cancellationToken)
         => PatchImageOpenshiftIoV1NamespacedImageStreamAsync(imageStream, imageStream.Metadata.Name, Namespace, cancellationToken: cancellationToken);
 
     public Task<ImageStreamList> ListImageStreamsAsync(string labelSelector, CancellationToken cancellationToken)

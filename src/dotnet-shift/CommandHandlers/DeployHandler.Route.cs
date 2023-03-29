@@ -4,7 +4,7 @@ using OpenShift;
 
 sealed partial class DeployHandler
 {
-    private async Task ApplyAppRoute(
+    private async Task<Route> ApplyAppRoute(
         IOpenShiftClient client,
         string name,
         Route? current,
@@ -20,11 +20,11 @@ sealed partial class DeployHandler
 
         if (current is null)
         {
-            await client.CreateRouteAsync(route, cancellationToken);
+            return await client.CreateRouteAsync(route, cancellationToken);
         }
         else
         {
-            await client.PatchRouteAsync(route, cancellationToken);
+            return await client.PatchRouteAsync(route, cancellationToken);
         }
     }
 

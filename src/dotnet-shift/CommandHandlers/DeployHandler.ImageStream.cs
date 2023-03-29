@@ -4,7 +4,7 @@ using OpenShift;
 
 sealed partial class DeployHandler
 {
-    private async Task ApplyAppImageStream(
+    private async Task<ImageStream> ApplyAppImageStream(
         IOpenShiftClient client,
         string name,
         ImageStream? current,
@@ -18,11 +18,11 @@ sealed partial class DeployHandler
 
         if (current is null)
         {
-            await client.CreateImageStreamAsync(imageStream, cancellationToken);
+            return await client.CreateImageStreamAsync(imageStream, cancellationToken);
         }
         else
         {
-            await client.PatchImageStreamAsync(imageStream, cancellationToken);
+            return await client.PatchImageStreamAsync(imageStream, cancellationToken);
         }
     }
 

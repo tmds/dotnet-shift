@@ -5,10 +5,10 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task<Deployment?> GetDeploymentAsync(string name, CancellationToken cancellationToken)
         => ReadAppsV1NamespacedDeploymentAsync(name, Namespace, cancellationToken: cancellationToken);
 
-    public Task CreateDeploymentAsync(Deployment deployment, CancellationToken cancellationToken)
+    public Task<Deployment> CreateDeploymentAsync(Deployment deployment, CancellationToken cancellationToken)
         => CreateAppsV1NamespacedDeploymentAsync(deployment, Namespace, cancellationToken: cancellationToken);
 
-    public Task PatchDeploymentAsync(Deployment deployment, CancellationToken cancellationToken)
+    public Task<Deployment> PatchDeploymentAsync(Deployment deployment, CancellationToken cancellationToken)
         => PatchAppsV1NamespacedDeploymentAsync(deployment, deployment.Metadata.Name, Namespace, cancellationToken: cancellationToken);
 
     public Task<DeploymentList> ListDeploymentsAsync(string labelSelector, CancellationToken cancellationToken)

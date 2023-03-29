@@ -4,7 +4,7 @@ using OpenShift;
 
 sealed partial class DeployHandler
 {
-    private static async Task CreateAppConfigMap(
+    private static async Task<ConfigMap> CreateAppConfigMap(
         IOpenShiftClient client,
         string name,
         Dictionary<string, string> labels,
@@ -13,7 +13,7 @@ sealed partial class DeployHandler
         ConfigMap configMap = CreateAppConfigMap(
             name,
             labels);
-        await client.CreateConfigMapAsync(configMap, cancellationToken);
+        return await client.CreateConfigMapAsync(configMap, cancellationToken);
     }
 
     private static ConfigMap CreateAppConfigMap(
