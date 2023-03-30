@@ -77,7 +77,7 @@ sealed class LoginHandler
             switch (projects.Count)
             {
                 case 0:
-                    Console.WriteErrorLine($"You don't have access to any namespaces on this cluster.");
+                    Console.WriteErrorLine($"You do not have access to any namespaces on this cluster.");
                     return CommandResult.Failure;
                 case 1:
                     login.Namespace = projects[0].Metadata.Name;

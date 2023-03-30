@@ -34,7 +34,7 @@ sealed partial class DeployHandler
         public ImageStream? S2iImageStream { get; init; }
     }
 
-    public async Task<int> ExecuteAsync(LoginContext login, string project, string? name, string? partOf, bool expose, CancellationToken cancellationToken)
+    public async Task<int> ExecuteAsync(LoginContext login, string project, string? name, string? partOf, bool expose, bool follow, bool startBuild, CancellationToken cancellationToken)
     {
         // Find the .NET project file.
         if (!TryFindProjectFile(WorkingDirectory, project, out string? projectFile))
@@ -67,10 +67,10 @@ sealed partial class DeployHandler
         string binaryBuildConfigName = GetBinaryConfigName(name);
 
         Console.WriteLine($"Using namespace '{login.Namespace}' at '{login.Server}'.");
-        Console.WriteLine();
         IOpenShiftClient client = OpenShiftClientFactory.CreateClient(login);
 
         // Get the currently deployed resources.
+        Console.WriteLine(); // section "resources"
         Console.WriteLine($"Retrieving existing resources...");
         ComponentResources resources = await GetDeployedResources(client, name, binaryBuildConfigName, runtime, cancellationToken);
 
@@ -79,58 +79,65 @@ sealed partial class DeployHandler
         partOf ??= GetPartOf(resources.Deployment?.Metadata?.Labels) ?? name;
 
         Console.WriteLine("Updating resources...");
-        Console.WriteLine();
         resources = await UpdateResourcesAsync(client, resources, name, binaryBuildConfigName,
                                     runtime, runtimeVersion,
                                     gitUri: gitInfo?.RemoteUrl, gitRef: gitInfo?.RemoteBranch,
                                     partOf, expose, cancellationToken);
 
-        // Start the build.
-        // Ensure the s2i image is resolved.
-        if (resources.S2iImageStream is not null &&
-            !await CheckRuntimeImageAvailableAsync(client, resources.S2iImageStream, runtimeVersion, cancellationToken))
+        if (startBuild)
         {
-            return CommandResult.Failure;
-        }
-        // Upload sources.
-        Console.WriteLine($"Uploading sources from '{contextDir}'...");
-        Build? build = await StartBuildAsync(client, binaryBuildConfigName, contextDir, projectFile, cancellationToken);
-
-        bool follow = true;
-
-        // Follow the build.
-        if (follow)
-        {
-            string buildName = build.Metadata.Name;
-            build = await FollowBuildAsync(client, buildName, cancellationToken);
-            if (build is null)
+            Console.WriteLine(); // section "build"
+            // Ensure the s2i image is resolved.
+            if (resources.S2iImageStream is not null &&
+                !await CheckRuntimeImageAvailableAsync(client, resources.S2iImageStream, runtimeVersion, cancellationToken))
             {
-                Console.WriteErrorLine($"The build '{buildName}' is missing.");
                 return CommandResult.Failure;
             }
-            Debug.Assert(build.IsBuildFinished());
-        }
 
-        // Report build fail/success.
-        if (!CheckBuildNotFailed(build, out string? builtImage))
-        {
-            return CommandResult.Failure;
-        }
+            // Upload sources and start the build.
+            Console.WriteLine($"Uploading sources from directory '{contextDir}'...");
+            Build? build = await StartBuildAsync(client, binaryBuildConfigName, contextDir, projectFile, cancellationToken);
 
-        // Follow the deployment.
-        if (follow)
-        {
-            Debug.Assert(builtImage is not null);
-            if (!await TryFollowDeploymentAsync(client, deploymentName: name, builtImage, cancellationToken))
+            // Follow the build.
+            if (follow)
+            {
+                string buildName = build.Metadata.Name;
+                build = await FollowBuildAsync(client, buildName, cancellationToken);
+                if (build is null)
+                {
+                    Console.WriteErrorLine($"The build '{buildName}' is missing.");
+                    return CommandResult.Failure;
+                }
+                Debug.Assert(build.IsBuildFinished());
+            }
+
+            // Report build fail/success.
+            if (!CheckBuildNotFailed(build, out string? builtImage))
             {
                 return CommandResult.Failure;
+            }
+            else if (!follow)
+            {
+                Console.WriteLine("The build is started.");
+                return CommandResult.Success;
+            }
+
+            // Follow the deployment.
+            if (follow)
+            {
+                Console.WriteLine(); // section "deployment"
+                Debug.Assert(builtImage is not null);
+                if (!await TryFollowDeploymentAsync(client, deploymentName: name, builtImage, cancellationToken))
+                {
+                    return CommandResult.Failure;
+                }
             }
         }
 
         // Print Route url.
         if (resources.Route is { } route)
         {
-            Console.WriteLine();
+            Console.WriteLine(); // section "route"
             Console.WriteLine($"The application is exposed at '{route.GetRouteUrl()}'");
         }
 
@@ -265,7 +272,8 @@ sealed partial class DeployHandler
                     if (progressCondition.Reason == "NewReplicaSetAvailable")
                     {
                         // Completed successfully.
-                        Console.WriteLine($"The deployment finished successfully. There are {deployment.Status.AvailableReplicas} available pods.");
+                        int availablePods = deployment.Status.AvailableReplicas ?? 0;
+                        Console.WriteLine($"The deployment finished successfully. There {(availablePods == 1 ? "is" : "are")} {availablePods} available pods.");
                         return true;
                     }
 
@@ -365,7 +373,6 @@ sealed partial class DeployHandler
                 Console.WriteLine(line);
             }
         }
-        Console.WriteLine();
 
         // Wait for the build to finish.
         while (true)

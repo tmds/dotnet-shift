@@ -164,6 +164,8 @@ partial class AppCommandLine
         command.Add(Options.DeploymentNameOption);
         command.Add(Options.ExposeOption);
         command.Add(Options.PartOfOption);
+        command.Add(Options.NoFollowOption);
+        command.Add(Options.NoBuildOption);
 
         command.Handler = CreateHandlerBuilder()
                             .Filter(GetLoginContext)
@@ -179,10 +181,12 @@ partial class AppCommandLine
 
                                 string project = parseResult.GetValue(Options.RequiredDeployProjectArgument)!;
                                 bool expose = parseResult.GetValue(Options.ExposeOption);
+                                bool noFollow = parseResult.GetValue(Options.NoFollowOption);
+                                bool noBuild = parseResult.GetValue(Options.NoBuildOption);
                                 string? partOf = parseResult.GetValue(Options.PartOfOption);
                                 string? name = parseResult.GetValue(Options.DeploymentNameOption);
 
-                                return await handler.ExecuteAsync(loginContext, project, name, partOf, expose, cancellationToken);
+                                return await handler.ExecuteAsync(loginContext, project, name, partOf, expose, follow: !noFollow, startBuild: !noBuild, cancellationToken);
                             })
                             .Build();
 
