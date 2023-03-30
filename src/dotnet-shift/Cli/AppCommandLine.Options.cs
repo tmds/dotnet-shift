@@ -62,6 +62,20 @@ sealed partial class AppCommandLine
                 Arity = ArgumentArity.Zero
             };
 
+        public static readonly Option<bool> NoFollowOption =
+            new Option<bool>("--no-follow")
+            {
+                Description = "Do not follow progress",
+                Arity = ArgumentArity.Zero
+            };
+
+        public static readonly Option<bool> NoBuildOption =
+            new Option<bool>("--no-build")
+            {
+                Description = "Do not start a build",
+                Arity = ArgumentArity.Zero
+            };
+
         public static readonly Option<string> PartOfOption =
             new Option<string>("--part-of")
             {
