@@ -37,49 +37,30 @@ sealed class LoginHandler
         {
             login.Username = await DetermineUserNameAsync(client, cancellationToken);
         }
-        catch (System.Exception ex) when (!login.SkipTlsVerify && IsAuthenticationException(ex))
+        catch (OpenShiftClientException ex) when (!login.SkipTlsVerify && ex.AuthenticationException is { } authException)
         {
-            Debug.Assert(!skipVerify);
+            Console.WriteLine($"The connection is not trusted: {authException.Message}.");
+            Console.WriteLine("You can bypass the certificate check, but any data you send to the server could be intercepted by others.");
+            Console.WriteLine();
 
-            // Can we log in skipping ssl verification?
-            login.SkipTlsVerify = true;
+            if (!Console.Profile.Capabilities.Interactive)
+            {
+                Console.WriteErrorLine($"Cannot log in to an insecure server. To ignore the certificate, you can add the '{Cli.AppCommandLine.Options.InsecureSkipTlsVerifyOption.Name}' option.");
+                return CommandResult.Failure;
+            }
+
+            login.SkipTlsVerify = await new ConfirmationPrompt("Use insecure connections?") { DefaultValue = false }
+                                            .ShowAsync(Console, cancellationToken);
+            Console.WriteLine();
+
+            if (!login.SkipTlsVerify)
+            {
+                Console.WriteErrorLine($"The remote server is not trusted.");
+                return CommandResult.Failure;
+            }
+
             client = OpenShiftClientFactory.CreateClient(login);
-            try
-            {
-                login.Username = await DetermineUserNameAsync(client, cancellationToken);
-
-                Console.WriteLine("The server uses a certificate signed by an unknown authority.");
-                Console.WriteLine("You can bypass the certificate check, but any data you send to the server could be intercepted by others.");
-                Console.WriteLine();
-
-                if (!Console.Profile.Capabilities.Interactive)
-                {
-                    Console.WriteErrorLine($"Cannot log in to an insecure server. To ignore the certificate, you can add the '{Cli.AppCommandLine.Options.InsecureSkipTlsVerifyOption.Name}' option.");
-                    return CommandResult.Failure;
-                }
-
-                skipVerify = await new ConfirmationPrompt("Use insecure connections?") { DefaultValue = false }
-                                                .ShowAsync(Console, cancellationToken);
-                Console.WriteLine();
-
-                if (!skipVerify)
-                {
-                    Console.WriteErrorLine($"The remote server is not trusted.");
-                    return CommandResult.Failure;
-                }
-            }
-            catch (System.Exception retryEx) when (IsAuthenticationException(retryEx))
-            {
-                // Ignore and throw the original exception.
-            }
-
-            if (!skipVerify)
-            {
-                throw;
-            }
-
-            Debug.Assert(login.SkipTlsVerify);
-            Debug.Assert(login.Username is not null);
+            login.Username = await DetermineUserNameAsync(client, cancellationToken);
         }
         Console.WriteLine($"Logged into '{server}' as '{login.Username}' using the provided token.");
         Console.WriteLine();
@@ -160,19 +141,6 @@ sealed class LoginHandler
         Console.WriteLine($"Using namespace '{login.Namespace}' on server '{uri?.Host}'.");
 
         return 0;
-
-        static bool IsAuthenticationException(System.Exception? ex)
-        {
-            while (ex is not null)
-            {
-                if (ex is AuthenticationException)
-                {
-                    return true;
-                }
-                ex = ex.InnerException;
-            }
-            return false;
-        }
     }
 
     private static async Task<string> DetermineUserNameAsync(IOpenShiftClient client, CancellationToken cancellationToken)
