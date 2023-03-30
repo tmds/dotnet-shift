@@ -56,6 +56,9 @@ sealed partial class DeployHandler
         Debug.Assert(projectInformation.AssemblyName is not null);
         Debug.Assert(projectInformation.DotnetVersion is not null);
 
+        string runtime = ResourceLabelValues.DotnetRuntime;
+        string runtimeVersion = projectInformation.DotnetVersion;
+
         // Get git information.
         GitRepoInfo? gitInfo = GitRepoReader.ReadGitRepoInfo(contextDir);
 
@@ -69,7 +72,7 @@ sealed partial class DeployHandler
 
         // Get the currently deployed resources.
         Console.WriteLine($"Retrieving existing resources...");
-        ComponentResources resources = await GetDeployedResources(client, name, binaryBuildConfigName, ResourceLabelValues.DotnetRuntime, cancellationToken);
+        ComponentResources resources = await GetDeployedResources(client, name, binaryBuildConfigName, runtime, cancellationToken);
 
         // If partOf was not set, default to the application of existing resources,
         // or the name of the deployment.
@@ -78,19 +81,27 @@ sealed partial class DeployHandler
         Console.WriteLine("Updating resources...");
         Console.WriteLine();
         resources = await UpdateResourcesAsync(client, resources, name, binaryBuildConfigName,
-                                    ResourceLabelValues.DotnetRuntime, projectInformation.DotnetVersion,
+                                    runtime, runtimeVersion,
                                     gitUri: gitInfo?.RemoteUrl, gitRef: gitInfo?.RemoteBranch,
                                     partOf, expose, cancellationToken);
 
         // Start the build.
+        // Ensure the s2i image is resolved.
+        if (resources.S2iImageStream is not null &&
+            !await CheckRuntimeImageAvailableAsync(client, resources.S2iImageStream, runtimeVersion, cancellationToken))
+        {
+            return CommandResult.Failure;
+        }
+        // Upload sources.
         Console.WriteLine($"Uploading sources from '{contextDir}'...");
         Build? build = await StartBuildAsync(client, binaryBuildConfigName, contextDir, projectFile, cancellationToken);
-        string buildName = build.Metadata.Name;
+
         bool follow = true;
 
         // Follow the build.
         if (follow)
         {
+            string buildName = build.Metadata.Name;
             build = await FollowBuildAsync(client, buildName, cancellationToken);
             if (build is null)
             {
@@ -192,9 +203,9 @@ sealed partial class DeployHandler
     private async Task<bool> TryFollowDeploymentAsync(IOpenShiftClient client, string deploymentName, string builtImage, CancellationToken cancellationToken)
     {
         bool isImageDeployed = false;
-        bool printedImageNotYetDeployedShort = false;
         DeploymentCondition2? previousProgressCondition = null, previousReplicaFailureCondition = null;
 
+        bool printedImageNotYetDeployedShort = false;
         Stopwatch stopwatch = new();
         stopwatch.Start();
 
@@ -295,7 +306,7 @@ sealed partial class DeployHandler
                 previousReplicaFailureCondition = replicaFailureCondition;
             }
 
-            await Task.Delay(100);
+            await Task.Delay(100, cancellationToken);
         }
 
         static bool HasConditionChanged(DeploymentCondition2? previousCondition, DeploymentCondition2 newCondition)
