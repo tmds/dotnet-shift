@@ -68,7 +68,7 @@ sealed partial class DeployHandler
         IOpenShiftClient client = OpenShiftClientFactory.CreateClient(login);
 
         // Get the currently deployed resources.
-        Console.WriteLine($"Retrieving existing resources for '{name}'...");
+        Console.WriteLine($"Retrieving existing resources...");
         ComponentResources resources = await GetDeployedResources(client, name, binaryBuildConfigName, ResourceLabelValues.DotnetRuntime, cancellationToken);
 
         // If partOf was not set, default to the application of existing resources,
@@ -120,7 +120,7 @@ sealed partial class DeployHandler
         if (resources.Route is { } route)
         {
             Console.WriteLine();
-            Console.WriteLine($"The application can be reached at '{route.GetRouteUrl()}'");
+            Console.WriteLine($"The application is exposed at '{route.GetRouteUrl()}'");
         }
 
         return CommandResult.Success;
@@ -254,7 +254,7 @@ sealed partial class DeployHandler
                     if (progressCondition.Reason == "NewReplicaSetAvailable")
                     {
                         // Completed successfully.
-                        Console.WriteLine($"The deployment finished successfully.");
+                        Console.WriteLine($"The deployment finished successfully. There are {deployment.Status.AvailableReplicas} available pods.");
                         return true;
                     }
 
@@ -403,9 +403,6 @@ sealed partial class DeployHandler
                                             string partOf, bool expose,
                                             CancellationToken cancellationToken)
     {
-        // Update the route when the application was already exposed.
-        expose = expose || current.Route is not null;
-
         Dictionary<string, string> componentLabels = GetComponentLabels(partOf, name);
         Dictionary<string, string> runtimeLabels = GetRuntimeLabels(runtime, runtimeVersion);
         Dictionary<string, string> selectorLabels = GetSelectorLabels(name);
@@ -434,15 +431,12 @@ sealed partial class DeployHandler
                                         cancellationToken
                                     );
 
-        ConfigMap? configMap = current.ConfigMap;
-        if (current.ConfigMap is null)
-        {
-            configMap = await CreateAppConfigMap(
+        ConfigMap? configMap = await ApplyAppConfigMap(
                                     client,
                                     name,
+                                    current.ConfigMap,
                                     componentLabels,
                                     cancellationToken);
-        }
 
         Debug.Assert(runtime == ResourceLabelValues.DotnetRuntime);
         ImageStream? s2iImageStream = await ApplyDotnetImageStreamTag(
@@ -458,7 +452,8 @@ sealed partial class DeployHandler
                                   cancellationToken);
 
         Route? route = null;
-        if (expose)
+        if (expose ||
+            current.Route is not null) // Update the route when the application was already exposed.
         {
             route = await ApplyAppRoute(client,
                                 name,

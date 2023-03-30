@@ -4,20 +4,31 @@ using OpenShift;
 
 sealed partial class DeployHandler
 {
-    private static async Task<ConfigMap> CreateAppConfigMap(
+    private static async Task<ConfigMap> ApplyAppConfigMap(
         IOpenShiftClient client,
         string name,
+        ConfigMap? current,
         Dictionary<string, string> labels,
         CancellationToken cancellationToken)
     {
         ConfigMap configMap = CreateAppConfigMap(
             name,
+            current,
             labels);
-        return await client.CreateConfigMapAsync(configMap, cancellationToken);
+
+        if (current is null)
+        {
+            return await client.CreateConfigMapAsync(configMap, cancellationToken);
+        }
+        else
+        {
+            return await client.PatchConfigMapAsync(configMap, cancellationToken);
+        }
     }
 
     private static ConfigMap CreateAppConfigMap(
         string name,
+        ConfigMap? current,
         Dictionary<string, string> labels)
     {
         return new ConfigMap
@@ -29,10 +40,11 @@ sealed partial class DeployHandler
                 Name = name,
                 Labels = labels
             },
-            Data = new Dictionary<string, string>()
-            {
-                { "appsettings.json", "{\n}" }
-            }
+            Data = current is not null ? null : // Don't touch existing data.
+                new Dictionary<string, string>()
+                {
+                    { "appsettings.json", "{\n}" }
+                }
         };
     }
 }

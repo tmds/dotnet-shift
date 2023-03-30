@@ -17,6 +17,7 @@ interface IOpenShiftClient
     Task<BuildConfig> CreateBuildConfigAsync(BuildConfig buildConfig, CancellationToken cancellationToken);
     Task<BuildConfig> PatchBuildConfigAsync(BuildConfig buildConfig, CancellationToken cancellationToken);
     Task<ConfigMap> CreateConfigMapAsync(ConfigMap configMap, CancellationToken cancellationToken);
+    Task<ConfigMap> PatchConfigMapAsync(ConfigMap configMap, CancellationToken cancellationToken);
     Task<ImageStream> CreateImageStreamAsync(ImageStream imageStream, CancellationToken cancellationToken);
     Task<ImageStream> PatchImageStreamAsync(ImageStream imageStream, CancellationToken cancellationToken);
     Task<Route> CreateRouteAsync(Route route, CancellationToken cancellationToken);
