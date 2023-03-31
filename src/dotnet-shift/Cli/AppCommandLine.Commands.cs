@@ -8,9 +8,9 @@ namespace Cli;
 
 partial class AppCommandLine
 {
-    private RootCommand CreateRootCommand()
+    private CliRootCommand CreateRootCommand()
     {
-        RootCommand root = new()
+        CliRootCommand root = new()
         {
             Description = "A .NET tool for working with OpenShift"
         };
@@ -51,7 +51,7 @@ partial class AppCommandLine
         return root;
     }
 
-    private Command CreateLoginCommand()
+    private CliCommand CreateLoginCommand()
     {
         var command = CreateCommand("login", "Log in to a server");
 
@@ -81,18 +81,18 @@ partial class AppCommandLine
         return command;
     }
 
-    private void AddOptionsSorted(Command command, params Symbol[] symbols)
+    private void AddOptionsSorted(CliCommand command, params CliSymbol[] symbols)
     {
-        System.Array.Sort(symbols, (Symbol lhs, Symbol rhs) => lhs.Name.CompareTo(rhs.Name));
+        System.Array.Sort(symbols, (CliSymbol lhs, CliSymbol rhs) => lhs.Name.CompareTo(rhs.Name));
         foreach (var symbol in symbols)
         {
             command.Add(symbol);
         }
     }
 
-    private System.CommandLine.Command CreateContextCommand()
+    private System.CommandLine.CliCommand CreateContextCommand()
     {
-        var command = new System.CommandLine.Command("context", "Operate on connection contexts");
+        var command = new System.CommandLine.CliCommand("context", "Operate on connection contexts");
 
         // 1. get
         command.Add(CreateContextGetCommand());
@@ -106,7 +106,7 @@ partial class AppCommandLine
         return command;
     }
 
-    private Command CreateContextGetCommand()
+    private CliCommand CreateContextGetCommand()
     {
         var command = CreateCommand("get", "Print information about the current context");
 
@@ -129,7 +129,7 @@ partial class AppCommandLine
         return command;
     }
 
-    private Command CreateContextListCommand()
+    private CliCommand CreateContextListCommand()
     {
         var command = CreateCommand("list", "List connection contexts");
 
@@ -146,7 +146,7 @@ partial class AppCommandLine
         return command;
     }
 
-    private Command CreateContextSetCommand()
+    private CliCommand CreateContextSetCommand()
     {
         var command = CreateCommand("set", "Set the current connection context");
 
@@ -167,7 +167,7 @@ partial class AppCommandLine
         return command;
     }
 
-    private Command CreateContextDeleteCommand()
+    private CliCommand CreateContextDeleteCommand()
     {
         var command = CreateCommand("delete", "Delete the specified connection context");
 
@@ -188,7 +188,7 @@ partial class AppCommandLine
         return command;
     }
 
-    private Command CreateDeployCommand()
+    private CliCommand CreateDeployCommand()
     {
         var command = CreateCommand("deploy", "Deploy a .NET application to OpenShift");
 
@@ -228,7 +228,7 @@ partial class AppCommandLine
         return command;
     }
 
-    private Command CreateDeleteCommand()
+    private CliCommand CreateDeleteCommand()
     {
         var command = CreateCommand("delete", "Delete an application");
 
@@ -256,7 +256,7 @@ partial class AppCommandLine
         return command;
     }
 
-    private Command CreateListCommand()
+    private CliCommand CreateListCommand()
     {
         var command = CreateCommand("list", "List deployments");
 

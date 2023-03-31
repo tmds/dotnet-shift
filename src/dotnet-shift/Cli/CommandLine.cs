@@ -17,7 +17,7 @@ class CommandLine<TContext>
 
     protected Filter? ContextExceptionHandler { get; set; }
 
-    protected void Configure(RootCommand command, System.Action<CommandLineConfiguration> configure)
+    protected void Configure(CliRootCommand command, System.Action<CommandLineConfiguration> configure)
     {
         if (_config is not null)
         {
@@ -35,19 +35,19 @@ class CommandLine<TContext>
     protected CommandHandlerBuilder CreateHandlerBuilder()
         => new CommandHandlerBuilder();
 
-    protected Command CreateCommand(string name, string? description = null)
+    protected CliCommand CreateCommand(string name, string? description = null)
     {
-        return new Command(this, name, description);
+        return new CliCommand(this, name, description);
     }
 
     public Task<int> InvokeAsync(string[] args)
         => _config!.InvokeAsync(args);
 
-    protected class Command : System.CommandLine.Command
+    protected class CliCommand : System.CommandLine.CliCommand
     {
         private readonly CommandLine<TContext> _commandLine;
 
-        public Command(CommandLine<TContext> commandLine, string name, string? description = null) :
+        public CliCommand(CommandLine<TContext> commandLine, string name, string? description = null) :
             base(name, description)
         {
             _commandLine = commandLine;
