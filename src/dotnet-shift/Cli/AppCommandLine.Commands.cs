@@ -10,12 +10,23 @@ partial class AppCommandLine
 {
     private RootCommand CreateRootCommand()
     {
-        RootCommand root = new();
+        RootCommand root = new()
+        {
+            Description = "A .NET tool for working with OpenShift"
+        };
+
+        // note: this is the order that appears in help.
+        // 1. login
         root.Add(CreateLoginCommand());
+        // 2. create
         root.Add(CreateDeployCommand());
-        root.Add(CreateContextCommand());
+        // 3. list
         root.Add(CreateListCommand());
+        // 4. delete
         root.Add(CreateDeleteCommand());
+
+        // other commands:
+        root.Add(CreateContextCommand());
 
         root.SetAction(ctx =>
         {
@@ -44,11 +55,12 @@ partial class AppCommandLine
     {
         var command = CreateCommand("login", "Log in to a server");
 
-        command.Add(Options.RequiredServerOption);
-        command.Add(Options.RequiredTokenOption);
-        command.Add(Options.InsecureSkipTlsVerifyOption);
-        command.Add(Options.NamespaceOption);
-        command.Add(Options.LoginNameOption);
+        AddOptionsSorted(command,
+                            Options.RequiredServerOption,
+                            Options.RequiredTokenOption,
+                            Options.InsecureSkipTlsVerifyOption,
+                            Options.NamespaceOption,
+                            Options.LoginNameOption);
 
         command.Handler = async (AppContext ctx, CancellationToken cancellationToken) =>
         {
@@ -69,13 +81,26 @@ partial class AppCommandLine
         return command;
     }
 
+    private void AddOptionsSorted(Command command, params Symbol[] symbols)
+    {
+        System.Array.Sort(symbols, (Symbol lhs, Symbol rhs) => lhs.Name.CompareTo(rhs.Name));
+        foreach (var symbol in symbols)
+        {
+            command.Add(symbol);
+        }
+    }
+
     private System.CommandLine.Command CreateContextCommand()
     {
         var command = new System.CommandLine.Command("context", "Operate on connection contexts");
 
+        // 1. get
         command.Add(CreateContextGetCommand());
+        // 2. list
         command.Add(CreateContextListCommand());
+        // 3. set
         command.Add(CreateContextSetCommand());
+        // 4. delete
         command.Add(CreateContextDeleteCommand());
 
         return command;
@@ -85,14 +110,21 @@ partial class AppCommandLine
     {
         var command = CreateCommand("get", "Print information about the current context");
 
-        command.Handler = async (AppContext ctx, CancellationToken cancellationToken) =>
-        {
-            var services = ctx.Services;
-            var parseResult = ctx.ParseResult;
+        command.Add(Options.ContextOption);
 
-            var handler = new ContextGetHandler(services.Console, services.Logger, services.KubeConfig);
-            return await handler.ExecuteAsync(cancellationToken);
-        };
+        command.Handler = CreateHandlerBuilder()
+                            .Filter(GetLoginContext)
+                            .Handle(async (AppContext ctx, CancellationToken cancellationToken) =>
+                            {
+                                var services = ctx.Services;
+                                var parseResult = ctx.ParseResult;
+
+                                LoginContext loginContext = ctx.LoginContext!;
+
+                                var handler = new ContextGetHandler(services.Console, services.Logger, services.KubeConfig);
+                                return await handler.ExecuteAsync(loginContext, cancellationToken);
+                            })
+                            .Build();
 
         return command;
     }
@@ -160,12 +192,15 @@ partial class AppCommandLine
     {
         var command = CreateCommand("deploy", "Deploy a .NET application to OpenShift");
 
+        AddOptionsSorted(command,
+                            Options.DeploymentNameOption,
+                            Options.ExposeOption,
+                            Options.PartOfOption,
+                            Options.NoFollowOption,
+                            Options.NoBuildOption,
+                            Options.ContextOption);
+
         command.Add(Options.RequiredDeployProjectArgument);
-        command.Add(Options.DeploymentNameOption);
-        command.Add(Options.ExposeOption);
-        command.Add(Options.PartOfOption);
-        command.Add(Options.NoFollowOption);
-        command.Add(Options.NoBuildOption);
 
         command.Handler = CreateHandlerBuilder()
                             .Filter(GetLoginContext)
@@ -197,6 +232,8 @@ partial class AppCommandLine
     {
         var command = CreateCommand("delete", "Delete an application");
 
+        command.Add(Options.ContextOption);
+
         command.Add(Options.RequiredAppArgument);
 
         command.Handler = CreateHandlerBuilder()
@@ -221,7 +258,9 @@ partial class AppCommandLine
 
     private Command CreateListCommand()
     {
-        var command = CreateCommand("list", "List the deployments");
+        var command = CreateCommand("list", "List deployments");
+
+        command.Add(Options.ContextOption);
 
         command.Handler = CreateHandlerBuilder()
                             .Filter(GetLoginContext)
@@ -247,11 +286,22 @@ partial class AppCommandLine
         var parseResult = ctx.ParseResult;
         var Console = services.Console;
 
-        LoginContext? loginContext = services.KubeConfig.GetCurrentContext();
+        string? context = parseResult.GetValue(Options.ContextOption);
+
+        LoginContext? loginContext = context is null ? services.KubeConfig.GetCurrentContext()
+                                                     : services.KubeConfig.GetAllContexts(includeTokens: false)
+                                                                          .FirstOrDefault(c => c.Name == context);
 
         if (loginContext is null)
         {
-            Console.WriteErrorLine("There is no connection context.");
+            if (context is null)
+            {
+                Console.WriteErrorLine("There is no connection context.");
+            }
+            else
+            {
+                Console.WriteErrorLine($"Connection context '{context}' was not found.");
+            }
             Console.WriteLine();
             Console.WriteLine("You can create a new connection using the 'login' command.");
             Console.WriteLine("You can list the available contexts using the 'context list' command, and select one using the 'context set' command.");
