@@ -272,8 +272,17 @@ sealed partial class DeployHandler
                     if (progressCondition.Reason == "NewReplicaSetAvailable")
                     {
                         // Completed successfully.
+
                         int availablePods = deployment.Status.AvailableReplicas ?? 0;
-                        Console.WriteLine($"The deployment finished successfully. There {(availablePods == 1 ? "is" : "are")} {availablePods} available pods.");
+                        availablePods = 0;
+                        string availablePodsDescription = availablePods switch
+                                {
+                                    1 => "There is 1 available pod.",
+                                    _ => $"There are {availablePods} available pods."
+                                };
+
+                        Console.MarkupLine($"The deployment finished successfully. {availablePodsDescription}");
+
                         return true;
                     }
 

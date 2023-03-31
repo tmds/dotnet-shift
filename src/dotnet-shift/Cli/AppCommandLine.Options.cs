@@ -93,5 +93,11 @@ sealed partial class AppCommandLine
         public static readonly Argument<string> RequiredAppArgument =
             new Argument<string>(APP)
             { };
+
+        public static readonly Option<string?> ContextOption =
+            new Option<string?>("--context")
+            {
+                Description = "The connection context [default: current context]"
+            };
     }
 }

@@ -13,19 +13,8 @@ sealed class ContextGetHandler
         KubeConfig = kubeConfig;
     }
 
-    public Task<int> ExecuteAsync(CancellationToken cancellationToken)
+    public Task<int> ExecuteAsync(LoginContext context, CancellationToken cancellationToken)
     {
-        LoginContext? context = KubeConfig.GetCurrentContext();
-
-        if (context is null)
-        {
-            Console.WriteLine("There is no connection context.");
-            Console.WriteLine();
-            Console.WriteLine("You can create a new connection using the 'login' command.");
-            Console.WriteLine("You can list the available contexts using the 'context list' command, and select one using the 'context set' command.");
-            return Task.FromResult(CommandResult.Failure);
-        }
-
         var grid = new Grid();
 
         grid.AddColumn();
