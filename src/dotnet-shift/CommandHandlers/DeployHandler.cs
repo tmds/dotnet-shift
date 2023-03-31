@@ -274,7 +274,6 @@ sealed partial class DeployHandler
                         // Completed successfully.
 
                         int availablePods = deployment.Status.AvailableReplicas ?? 0;
-                        availablePods = 0;
                         string availablePodsDescription = availablePods switch
                                 {
                                     1 => "There is 1 available pod.",
