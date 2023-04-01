@@ -14,7 +14,6 @@ sealed partial class DeployHandler
     {
         Service service = CreateAppService(
                 name,
-                current,
                 labels,
                 selectorLabels);
 
@@ -30,7 +29,6 @@ sealed partial class DeployHandler
 
     private static Service CreateAppService(
         string name,
-        Service? current,
         Dictionary<string, string> labels,
         Dictionary<string, string> selectorLabels)
     {

@@ -10,20 +10,20 @@ class CommandLine<TContext>
     internal protected delegate Task<int> Handler(TContext context, CancellationToken cancellationToken);
 
     private readonly ContextFactory<TContext> _contextFactory;
-    private CommandLineConfiguration? _config;
+    private CliConfiguration? _config;
 
     private TContext CreateContext(ParseResult parseResult)
         => _contextFactory(parseResult);
 
     protected Filter? ContextExceptionHandler { get; set; }
 
-    protected void Configure(CliRootCommand command, System.Action<CommandLineConfiguration> configure)
+    protected void Configure(CliRootCommand command, System.Action<CliConfiguration> configure)
     {
         if (_config is not null)
         {
             throw new System.InvalidOperationException();
         }
-        _config = new CommandLineConfiguration(command);
+        _config = new CliConfiguration(command);
         configure?.Invoke(_config);
     }
 

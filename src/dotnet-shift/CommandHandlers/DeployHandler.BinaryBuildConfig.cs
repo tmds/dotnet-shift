@@ -15,7 +15,6 @@ sealed partial class DeployHandler
     {
         BuildConfig buildConfig = CreateBinaryBuildConfig(
                 name,
-                current,
                 appImageStreamTag,
                 s2iImageStreamTag,
                 labels);
@@ -32,7 +31,6 @@ sealed partial class DeployHandler
 
     private static BuildConfig CreateBinaryBuildConfig(
         string name,
-        BuildConfig? current,
         string appImageStreamTag,
         string s2iImageStreamTag,
         Dictionary<string, string> labels)

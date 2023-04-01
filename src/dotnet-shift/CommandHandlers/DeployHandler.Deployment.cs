@@ -20,7 +20,6 @@ sealed partial class DeployHandler
     {
         Deployment deployment = CreateAppDeployment(
             name,
-            current,
             imageStreamTagName,
             gitUri, gitRef,
             labels,
@@ -38,7 +37,6 @@ sealed partial class DeployHandler
 
     private static Deployment CreateAppDeployment(
         string name,
-        Deployment? current,
         string imageStreamTagName,
         string? gitUri, string? gitRef,
         Dictionary<string, string> labels,
@@ -58,7 +56,7 @@ sealed partial class DeployHandler
             },
             Spec = new()
             {
-                Replicas = current?.Spec?.Replicas ?? 1,
+                Replicas = null, // Defaults to '1'.
                 Selector = new()
                 {
                     MatchLabels = selectorLabels

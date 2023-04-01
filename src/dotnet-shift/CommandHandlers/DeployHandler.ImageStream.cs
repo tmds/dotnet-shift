@@ -13,7 +13,6 @@ sealed partial class DeployHandler
     {
         ImageStream imageStream = CreateAppImageStream(
                 name,
-                current,
                 labels);
 
         if (current is null)
@@ -28,7 +27,6 @@ sealed partial class DeployHandler
 
     private static ImageStream CreateAppImageStream(
         string name,
-        ImageStream? current,
         Dictionary<string, string> labels)
     {
         return new ImageStream
