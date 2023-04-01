@@ -1,4 +1,6 @@
 using System.CommandLine;
+using System.CommandLine.Completions;
+using System.Runtime.InteropServices;
 
 namespace Cli;
 
@@ -47,12 +49,15 @@ sealed partial class AppCommandLine
 
         public static readonly CliArgument<string> RequiredContextArgument =
             new CliArgument<string>(CONTEXT)
-            { };
+            {
+                CompletionSources = { GetContextSuggestions }
+            };
 
         public static readonly CliArgument<string> RequiredDeployProjectArgument =
             new CliArgument<string>(PROJECT)
             {
-                DefaultValueFactory = _ => "."
+                DefaultValueFactory = _ => ".",
+                CompletionSources = { GetProjectSuggestions }
             };
 
         public static readonly CliOption<bool> ExposeOption =
@@ -97,7 +102,93 @@ sealed partial class AppCommandLine
         public static readonly CliOption<string?> ContextOption =
             new CliOption<string?>("--context")
             {
-                Description = "The connection context [default: current context]"
+                Description = "The connection context [default: current context]",
+                CompletionSources = { GetContextSuggestions }
             };
+
+        private static IEnumerable<CompletionItem> GetContextSuggestions(CompletionContext context)
+        {
+            var kubernetesConfigFile = new Kubectl.KubernetesConfigFile();
+
+            var contexts = kubernetesConfigFile.GetAllContexts(includeTokens: false);
+
+            return contexts.Where(c => c.Name.StartsWith(context.WordToComplete))
+                           .OrderBy(c => c.Name)
+                           .Select(c => new CompletionItem(c.Name));
+        }
+
+        private static IEnumerable<CompletionItem> GetProjectSuggestions(CompletionContext context)
+        {
+            string wordToComplete = context.WordToComplete;
+
+            // Path that corresponds to wordToComplete.
+            string pathToComplete = Path.Combine(Directory.GetCurrentDirectory(), wordToComplete);
+            // Handle '~' and `~/` because the bash completion script doesn't (https://github.com/dotnet/command-line-api/issues/2142).
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
+                (wordToComplete == "~" || wordToComplete.StartsWith("~/")))
+            {
+                string home = Path.GetFullPath(System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile,
+                                                                    System.Environment.SpecialFolderOption.DoNotVerify));
+                pathToComplete = $"{home}{wordToComplete.Substring(1)}";
+            }
+
+            // Directory to search.
+            string directory = Path.GetDirectoryName(pathToComplete)!;
+            if (!Directory.Exists(directory))
+            {
+                return System.Array.Empty<CompletionItem>();
+            }
+            System.Func<string, bool> pathFilter = path => path.StartsWith(pathToComplete);
+
+            EnumerationOptions NonRecursive = new EnumerationOptions { AttributesToSkip = FileAttributes.Hidden };
+            EnumerationOptions Recursive = new EnumerationOptions { AttributesToSkip = FileAttributes.Hidden, RecurseSubdirectories = true };
+            const string ProjFilter = "*.??proj";
+
+            IEnumerable<string> projectFilesInDirectory;
+            IEnumerable<string> subDirectories;
+            IEnumerable<string>? suggestions = null;
+            do
+            {
+                // Directory could be anywhere, we don't want to recursively search for all project files here.
+                projectFilesInDirectory = Directory.GetFiles(directory, ProjFilter, NonRecursive)
+                                                   .Where(pathFilter);
+
+                // If there are project files, consider it safe to do a recursive search for all project files.
+                if (projectFilesInDirectory.Any())
+                {
+                    suggestions = Directory.GetFiles(directory, ProjFilter, Recursive)
+                                           .Where(pathFilter);
+                    break;
+                }
+
+                // There are no project files, find the subdirectories.
+                subDirectories = Directory.GetDirectories(directory, "*", NonRecursive)
+                                          .Where(pathFilter);
+
+                // If there is only a single subdirectory, look inside the directory.
+                if (!projectFilesInDirectory.Any() && subDirectories.Count() == 1)
+                {
+                    pathFilter = path => true;
+                    directory = Path.Combine(directory, subDirectories.First());
+                    continue;
+                }
+
+                // There is no project file, and multiple subdirectories. Let the user pick a subdirectory.
+                suggestions = subDirectories.Select(path => $"{path}{Path.DirectorySeparatorChar}");
+                break;
+            } while (suggestions is null);
+
+            // Trim pathToComplete from the suggestions and replace it by wordToComplete.
+            int pathToCompleteOffset = pathToComplete.Length;
+            // If word to complete was empty, we need to also remove a leading directory separator.
+            if (wordToComplete.Length == 0)
+            {
+                pathToCompleteOffset++;
+            }
+            suggestions = suggestions.Select(p => $"{wordToComplete}{p.Substring(pathToCompleteOffset)}");
+
+            return suggestions.OrderBy(p => p)
+                              .Select(p => new CompletionItem(p));
+        }
     }
 }
