@@ -13,7 +13,7 @@ sealed partial class DeployHandler
         CancellationToken cancellationToken)
     {
         string s2iImage = GetS2iImage(dotnetVersion);
-        ImageStream imageStream = CreateDotnetImageStream(current, dotnetVersion, s2iImage);
+        ImageStream imageStream = CreateDotnetImageStream(dotnetVersion, s2iImage);
 
         if (current is null)
         {
@@ -92,7 +92,6 @@ sealed partial class DeployHandler
     }
 
     private static ImageStream CreateDotnetImageStream(
-        ImageStream? current,
         string dotnetVersion,
         string s2iImage)
     {

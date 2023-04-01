@@ -461,6 +461,7 @@ sealed partial class DeployHandler
                                     client,
                                     name,
                                     current.ConfigMap,
+                                    runtime,
                                     componentLabels,
                                     cancellationToken);
 

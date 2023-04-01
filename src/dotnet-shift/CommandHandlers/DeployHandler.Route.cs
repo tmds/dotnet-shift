@@ -14,7 +14,6 @@ sealed partial class DeployHandler
     {
         Route route = CreateAppRoute(
                 name,
-                current,
                 serviceName,
                 labels);
 
@@ -30,7 +29,6 @@ sealed partial class DeployHandler
 
     private static Route CreateAppRoute(
         string name,
-        Route? current,
         string serviceName,
         Dictionary<string, string> labels)
     {

@@ -1,5 +1,7 @@
 namespace CommandHandlers;
 
+using System;
+using System.Collections.Generic;
 using OpenShift;
 
 sealed partial class DeployHandler
@@ -8,13 +10,15 @@ sealed partial class DeployHandler
         IOpenShiftClient client,
         string name,
         ConfigMap? current,
+        string runtime,
         Dictionary<string, string> labels,
         CancellationToken cancellationToken)
     {
         ConfigMap configMap = CreateAppConfigMap(
             name,
-            current,
-            labels);
+            labels,
+            runtime,
+            initializeData: current is null);
 
         if (current is null)
         {
@@ -28,8 +32,9 @@ sealed partial class DeployHandler
 
     private static ConfigMap CreateAppConfigMap(
         string name,
-        ConfigMap? current,
-        Dictionary<string, string> labels)
+        Dictionary<string, string> labels,
+        string? runtime,
+        bool initializeData)
     {
         return new ConfigMap
         {
@@ -40,11 +45,20 @@ sealed partial class DeployHandler
                 Name = name,
                 Labels = labels
             },
-            Data = current is not null ? null : // Don't touch existing data.
-                new Dictionary<string, string>()
-                {
-                    { "appsettings.json", "{\n}" }
-                }
+            Data = !initializeData || runtime is null ? null : CreateInitialConfigDataForRuntime(runtime)
         };
+    }
+
+    private static IDictionary<string, string>? CreateInitialConfigDataForRuntime(string runtime)
+    {
+        if (runtime == ResourceLabelValues.DotnetRuntime)
+        {
+            return new Dictionary<string, string>()
+            {
+                { "appsettings.json", "{\n}" }
+            };
+        }
+
+        return null;
     }
 }
