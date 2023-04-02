@@ -324,11 +324,11 @@ partial class AppCommandLine
         {
             return await next(ctx, cancellatinToken);
         }
-        catch (System.OperationCanceledException)
+        catch (System.OperationCanceledException ce)
         {
             Console.WriteLine();
             Console.WriteErrorLine("The command was aborted by the user.");
-            return CommandResult.Failure;
+            printException = ce;
         }
         catch (OpenShiftClientException clientException)
         {

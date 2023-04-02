@@ -375,12 +375,38 @@ sealed partial class DeployHandler
         using Stream buildLog = await client.FollowBuildLogAsync(buildName, cancellationToken);
         StreamReader reader = new StreamReader(buildLog);
         string? line;
+        bool mask = false;
+        const string Masked = "<<MASKED>>";
         while ((line = await ReadLineAsync(reader, cancellationToken)) != null)
         {
             // Omit empty lines so the build log appears contiguous in the output. 
             if (!line.AsSpan().Trim(' ').IsEmpty)
             {
-                Console.WriteLine(line);
+                if (line.StartsWith("STEP ", StringComparison.InvariantCultureIgnoreCase) &&
+                   line.IndexOf(": ") is int colonIndex &&
+                   colonIndex != -1)
+                {
+                    string command = line.Substring(colonIndex + 2);
+                    if (command.StartsWith("ENV"))
+                    {
+                        // Mask ENV section because it may contain passwords or other sensitive information.
+                        Console.WriteLine(line.Substring(0, colonIndex) + $": ENV {Masked}");
+                        mask = true;
+                    }
+                    else
+                    {
+                        Console.WriteLine(line);
+                        mask = false;
+                    }
+                }
+                else if (mask)
+                {
+                    Console.WriteLine(Masked);
+                }
+                else
+                {
+                    Console.WriteLine(line);
+                }
             }
         }
 
