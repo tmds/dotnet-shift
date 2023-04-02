@@ -48,25 +48,26 @@ sealed partial class DeployHandler
         string contextDir = FindContextDirectory(projectFileDirectory);
 
         // Read the .NET project.
-        ProjectInformation projectInformation = ProjectReader.ReadProjectInfo(projectFile);
-        if (!IsProjectInformationUsable(Console, projectInformation))
+        ProjectInformation projectInfo = ProjectReader.ReadProjectInfo(projectFile);
+        if (!IsProjectInformationUsable(Console, projectInfo))
         {
             return CommandResult.Failure;
         }
-        Debug.Assert(projectInformation.AssemblyName is not null);
-        Debug.Assert(projectInformation.DotnetVersion is not null);
+        Debug.Assert(projectInfo.AssemblyName is not null);
+        Debug.Assert(projectInfo.DotnetVersion is not null);
 
         string runtime = ResourceLabelValues.DotnetRuntime;
-        string runtimeVersion = projectInformation.DotnetVersion;
+        string runtimeVersion = projectInfo.DotnetVersion;
 
         // Get git information.
         GitRepoInfo? gitInfo = GitRepoReader.ReadGitRepoInfo(contextDir);
 
         // Resource names.
-        name ??= DefaultName(projectInformation.AssemblyName);
+        name ??= DefaultName(projectInfo.AssemblyName);
         string binaryBuildConfigName = GetBinaryConfigName(name);
 
-        Console.WriteLine($"Using namespace '{login.Namespace}' at '{login.Server}'.");
+        Console.WriteLine($"Deploying '{name}' to namespace '{login.Namespace}' at '{login.Server}'.");
+
         IOpenShiftClient client = OpenShiftClientFactory.CreateClient(login);
 
         // Get the currently deployed resources.
@@ -96,7 +97,8 @@ sealed partial class DeployHandler
 
             // Upload sources and start the build.
             Console.WriteLine($"Uploading sources from directory '{contextDir}'...");
-            Build? build = await StartBuildAsync(client, binaryBuildConfigName, contextDir, projectFile, cancellationToken);
+            Build? build = await StartBuildAsync(client, binaryBuildConfigName, contextDir, projectFile,
+                                                 projectInfo.ContainerEnvironmentVariables, cancellationToken);
 
             // Follow the build.
             if (follow)
@@ -398,9 +400,14 @@ sealed partial class DeployHandler
         }
     }
 
-    private async Task<Build> StartBuildAsync(IOpenShiftClient client, string binaryBuildConfigName, string contextDir, string projectFile, CancellationToken cancellationToken)
+    private async Task<Build> StartBuildAsync(IOpenShiftClient client,
+                                              string binaryBuildConfigName,
+                                              string contextDir,
+                                              string projectFile,
+                                              Dictionary<string, string> environment,
+                                              CancellationToken cancellationToken)
     {
-        Dictionary<string, string> buildEnvironment = new();
+        Dictionary<string, string> buildEnvironment = new(environment);
         // Add DOTNET_STARTUP_PROJECT.
         AddStartupProject(buildEnvironment, contextDir, projectFile);
 
@@ -564,17 +571,17 @@ sealed partial class DeployHandler
         return name;
     }
 
-    internal static bool IsProjectInformationUsable(IAnsiConsole Console, ProjectInformation projectInformation)
+    internal static bool IsProjectInformationUsable(IAnsiConsole Console, ProjectInformation projectInfo)
     {
         bool usable = true;
 
-        if (projectInformation.DotnetVersion is null)
+        if (projectInfo.DotnetVersion is null)
         {
             Console.WriteErrorLine($"Cannot determine project target framework version.");
             usable = false;
         }
 
-        if (projectInformation.AssemblyName is null)
+        if (projectInfo.AssemblyName is null)
         {
             Console.WriteErrorLine($"Cannot determine application assembly name.");
             usable = false;
