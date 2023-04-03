@@ -133,12 +133,22 @@ sealed partial class AppCommandLine
             }
 
             // Directory to search.
-            string directory = Path.GetDirectoryName(pathToComplete)!;
-            if (!Directory.Exists(directory))
+            string directory;
+            System.Func<string, bool> pathFilter;
+            if (Directory.Exists(pathToComplete))
             {
-                return System.Array.Empty<CompletionItem>();
+                directory = pathToComplete;
+                pathFilter = path => true;
             }
-            System.Func<string, bool> pathFilter = path => path.StartsWith(pathToComplete);
+            else
+            {
+                directory = Path.GetDirectoryName(pathToComplete)!;
+                if (!Directory.Exists(directory))
+                {
+                    return System.Array.Empty<CompletionItem>();
+                }
+                pathFilter = path => path.StartsWith(pathToComplete);
+            }
 
             EnumerationOptions NonRecursive = new EnumerationOptions { AttributesToSkip = FileAttributes.Hidden };
             EnumerationOptions Recursive = new EnumerationOptions { AttributesToSkip = FileAttributes.Hidden, RecurseSubdirectories = true };
@@ -157,7 +167,22 @@ sealed partial class AppCommandLine
                 if (projectFilesInDirectory.Any())
                 {
                     suggestions = Directory.GetFiles(directory, ProjFilter, Recursive)
-                                           .Where(pathFilter);
+                                           .Where(pathFilter)
+                                           .Select(p =>
+                                            {
+                                                int subdirNameEnd = p.IndexOf(Path.DirectorySeparatorChar, directory.Length + 1);
+                                                if (subdirNameEnd == -1)
+                                                {
+                                                    // project file is not in a subdirectory.
+                                                    return p;
+                                                }
+                                                else
+                                                {
+                                                    // project file is in a subdirectory. Suggest the subdirectory name.
+                                                    return $"{p.Substring(0, subdirNameEnd)}{Path.DirectorySeparatorChar}";
+                                                }
+                                            })
+                                           .Distinct(); // Trim subdirectories that had multiple project files.
                     break;
                 }
 
