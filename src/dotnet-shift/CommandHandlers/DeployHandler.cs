@@ -13,6 +13,12 @@ sealed partial class DeployHandler
     private IProjectReader ProjectReader { get; }
     private IGitRepoReader GitRepoReader { get; }
 
+    // Let the user know something didn't happen after a short time.
+    private TimeSpan ShortFeedbackTimeout => TimeSpan.FromSeconds(5);
+
+    // Fail the operation if there was no progress for a long time.
+    private TimeSpan NoProgressTimeout => TimeSpan.FromSeconds(60);
+
     public DeployHandler(IAnsiConsole console, ILogger logger, string workingDirectory, IOpenShiftClientFactory clientFactory, IProjectReader projectReader, IGitRepoReader gitRepoReader)
     {
         Console = console;
@@ -211,12 +217,19 @@ sealed partial class DeployHandler
 
     private async Task<bool> TryFollowDeploymentAsync(IOpenShiftClient client, string deploymentName, string builtImage, CancellationToken cancellationToken)
     {
+        // Wait for the 'spec' to get updated to deploy the image.
         bool isImageDeployed = false;
-        DeploymentCondition2? previousProgressCondition = null, previousReplicaFailureCondition = null;
+        bool printedImageNotYetDeployed = false;
+        Stopwatch imageDeployStopwatch = Stopwatch.StartNew();
 
-        bool printedImageNotYetDeployedShort = false;
-        Stopwatch stopwatch = new();
-        stopwatch.Start();
+        // Wait for the deployment 'status' to report on the 'spec' generation.
+        bool printedPreviousGenerationStillDeploying = false;
+        Stopwatch? generationStopwatch = null;
+        Stopwatch? noProgressStopwatch = null;
+        DeploymentCondition2? previousGenerationProgressCondition = null, previousGenerationReplicaFailureCondition = null;
+
+        // Wait for the deployment 'spec' to complete.
+        DeploymentCondition2? previousProgressCondition = null, previousReplicaFailureCondition = null;
 
         while (true)
         {
@@ -248,80 +261,172 @@ sealed partial class DeployHandler
             // Wait for the image to get deployed.
             if (!isImageDeployed)
             {
-                TimeSpan elapsed = stopwatch.Elapsed;
+                TimeSpan elapsed = imageDeployStopwatch.Elapsed;
 
                 // Print a message if the deployment doesn't pick up the built image after a short time.
-                if (!printedImageNotYetDeployedShort &&
-                    elapsed > TimeSpan.FromSeconds(5))
+                if (!printedImageNotYetDeployed &&
+                    elapsed > ShortFeedbackTimeout)
                 {
-                    printedImageNotYetDeployedShort = true;
+                    printedImageNotYetDeployed = true;
                     Console.WriteLine($"Waiting for the deployment '{deploymentName}' to start deploying the image that was built...");
                 }
-
-                continue;
-            }
-
-            // Follow up on the deployment progess.
-            Debug.Assert(isImageDeployed);
-            if (deployment.Metadata.Generation == deployment.Status.ObservedGeneration)
-            {
-                DeploymentCondition2? progressCondition = deployment.Status.Conditions.FirstOrDefault(c => c.Type == "Progressing");
-                DeploymentCondition2? replicaFailureCondition = deployment.Status.Conditions.FirstOrDefault(c => c.Type == "ReplicaFailure");
-
-                // Check for progress.
-                if (progressCondition?.Status == "True")
+                else if (elapsed > NoProgressTimeout)
                 {
-                    if (progressCondition.Reason == "NewReplicaSetAvailable")
-                    {
-                        // Completed successfully.
-
-                        int availablePods = deployment.Status.AvailableReplicas ?? 0;
-                        string availablePodsDescription = availablePods switch
-                                {
-                                    1 => "There is 1 available pod.",
-                                    _ => $"There are {availablePods} available pods."
-                                };
-
-                        Console.MarkupLine($"The deployment finished successfully. {availablePodsDescription}");
-
-                        return true;
-                    }
-
-                    // Print a message if progress changes.
-                    // if (HasConditionChanged(previousProgressCondition, progressCondition))
-                    // {
-                    //     Console.WriteLine($"The deployment is progressing{DescribeConditionAsWith(progressCondition)}.");
-                    // }
-                }
-
-                // Report on replica set issues.
-                if (replicaFailureCondition?.Status == "True")
-                {
-                    // Print a message if the error changes.
-                    if (HasConditionChanged(previousReplicaFailureCondition, replicaFailureCondition))
-                    {
-                        Console.WriteErrorLine($"The deployment '{deploymentName}' replica set is failing{DescribeConditionAsWith(replicaFailureCondition)}.");
-                    }
-                }
-                else if (replicaFailureCondition?.Status == "False")
-                {
-                    // Print a message when the error is gone.
-                    if (previousReplicaFailureCondition?.Status == "True")
-                    {
-                        Console.WriteLine($"The deployment '{deploymentName}' replica set is no longer failing.");
-                    }
-                }
-
-                // Check for no progress.
-                if (progressCondition?.Status == "False")
-                {
-                    // Completed when no more progress.
-                    Console.WriteErrorLine($"The deployment '{deploymentName}' failed{DescribeConditionAsWith(progressCondition)}.");
+                    Console.WriteLine($"The deployment hasn't started deploying the image after {Math.Round(elapsed.TotalSeconds)} seconds.");
                     return false;
                 }
+            }
+            else
+            {
+                Debug.Assert(isImageDeployed);
 
-                previousProgressCondition = progressCondition;
-                previousReplicaFailureCondition = replicaFailureCondition;
+                // Wait for the status to match the spec generation.
+                if (deployment.Metadata.Generation != deployment.Status.ObservedGeneration)
+                {
+                    // Time how long we're waiting for the generation to change.
+                    if (generationStopwatch is null)
+                    {
+                        generationStopwatch = Stopwatch.StartNew();
+                    }
+
+                    // If the generation doesn't change after a short time.
+                    TimeSpan elapsed = imageDeployStopwatch.Elapsed;
+                    if (elapsed > ShortFeedbackTimeout)
+                    {
+                        DeploymentCondition2? progressCondition = deployment.Status.Conditions.FirstOrDefault(c => c.Type == "Progressing");
+                        DeploymentCondition2? replicaFailureCondition = deployment.Status.Conditions.FirstOrDefault(c => c.Type == "ReplicaFailure");
+
+                        // Report on replica set issues.
+                        if (replicaFailureCondition?.Status == "True")
+                        {
+                            // Print a message if the error changes.
+                            if (HasConditionChanged(previousGenerationReplicaFailureCondition, replicaFailureCondition))
+                            {
+                                printedPreviousGenerationStillDeploying = true;
+                                Console.WriteErrorLine($"The previous deployment of '{deploymentName}' replica set is failing{DescribeConditionAsWith(replicaFailureCondition)}.");
+                            }
+                        }
+                        else if (replicaFailureCondition?.Status == "False")
+                        {
+                            // Print a message when the error is gone.
+                            if (previousGenerationReplicaFailureCondition?.Status == "True")
+                            {
+                                Console.WriteLine($"The previous deployment of '{deploymentName}' replica set is no longer failing.");
+                            }
+                        }
+
+                        // Report on progress issues. Fail when we're no longer making progress.
+                        if (progressCondition?.Status == "True")
+                        {
+                            // Print a message when the error is gone.
+                            if (previousGenerationProgressCondition?.Status == "False")
+                            {
+                                Console.WriteLine($"The previous deployment of '{deploymentName}' is progressing.");
+                            }
+
+                            // Reset the fail timer when we make some progress.
+                            noProgressStopwatch?.Restart();
+                        }
+                        else
+                        {
+                            progressCondition ??= new()
+                            {
+                                Reason = "Unknown",
+                                Message = null
+                            };
+
+                            // Print a message if the error changes.
+                            if (HasConditionChanged(previousGenerationProgressCondition, progressCondition))
+                            {
+                                printedPreviousGenerationStillDeploying = true;
+                                Console.WriteErrorLine($"The previous deployment of '{deploymentName}' is not progressing{DescribeConditionAsWith(progressCondition)}.");
+                            }
+
+                            // Consider 'ReplicaSetCreateError' as unrecoverable immediately.
+                            if (progressCondition.Reason == "ReplicaSetCreateError")
+                            {
+                                return false;
+                            }
+                            // For other reasons, wait some time to consider the condition unrecoverable.
+                            if (noProgressStopwatch?.Elapsed > NoProgressTimeout)
+                            {
+                                return false;
+                            }
+                            noProgressStopwatch ??= Stopwatch.StartNew();
+                        }
+
+                        // If we haven't printed an error yet (unlikely), inform the user we're waiting.
+                        if (!printedPreviousGenerationStillDeploying)
+                        {
+                            printedPreviousGenerationStillDeploying = true;
+                            Console.WriteLine($"Waiting for the deployment '{deploymentName}' generation '{deployment.Status.ObservedGeneration}' to complete...");
+                        }
+
+                        previousGenerationProgressCondition = progressCondition;
+                        previousGenerationReplicaFailureCondition = replicaFailureCondition;
+                    }
+                }
+                else
+                {
+                    // Reset state that watches the generation.
+                    generationStopwatch = null;
+                    noProgressStopwatch = null;
+                    printedPreviousGenerationStillDeploying = false;
+                    previousGenerationProgressCondition = null;
+                    previousGenerationReplicaFailureCondition = null;
+
+                    DeploymentCondition2? progressCondition = deployment.Status.Conditions.FirstOrDefault(c => c.Type == "Progressing");
+                    DeploymentCondition2? replicaFailureCondition = deployment.Status.Conditions.FirstOrDefault(c => c.Type == "ReplicaFailure");
+
+                    // Check for progress.
+                    if (progressCondition?.Status == "True")
+                    {
+                        if (progressCondition.Reason == "NewReplicaSetAvailable")
+                        {
+                            // Completed successfully.
+
+                            int availablePods = deployment.Status.AvailableReplicas ?? 0;
+                            string availablePodsDescription = availablePods switch
+                                    {
+                                        1 => "There is 1 available pod.",
+                                        _ => $"There are {availablePods} available pods."
+                                    };
+
+                            Console.MarkupLine($"The deployment finished successfully. {availablePodsDescription}");
+
+                            return true;
+                        }
+                    }
+
+                    // Report on replica set issues.
+                    if (replicaFailureCondition?.Status == "True")
+                    {
+                        // Print a message if the error changes.
+                        if (HasConditionChanged(previousReplicaFailureCondition, replicaFailureCondition))
+                        {
+                            Console.WriteErrorLine($"The deployment '{deploymentName}' replica set is failing{DescribeConditionAsWith(replicaFailureCondition)}.");
+                        }
+                    }
+                    else if (replicaFailureCondition?.Status == "False")
+                    {
+                        // Print a message when the error is gone.
+                        if (previousReplicaFailureCondition?.Status == "True")
+                        {
+                            Console.WriteLine($"The deployment '{deploymentName}' replica set is no longer failing.");
+                        }
+                    }
+
+                    // Check for no progress.
+                    if (progressCondition?.Status == "False")
+                    {
+                        // Completed when no more progress.
+                        Console.WriteErrorLine($"The deployment '{deploymentName}' failed{DescribeConditionAsWith(progressCondition)}.");
+                        return false;
+                    }
+
+                    previousProgressCondition = progressCondition;
+                    previousReplicaFailureCondition = replicaFailureCondition;
+                }
             }
 
             await Task.Delay(100, cancellationToken);

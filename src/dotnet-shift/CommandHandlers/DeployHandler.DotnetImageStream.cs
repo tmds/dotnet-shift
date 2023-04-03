@@ -69,7 +69,7 @@ sealed partial class DeployHandler
             // Print a message if the image doesn't become available after a short time.
             System.TimeSpan elapsed = stopwatch.Elapsed;
             if (!printedImageNotYetAvailable &&
-                elapsed > System.TimeSpan.FromSeconds(5))
+                elapsed > ShortFeedbackTimeout)
             {
                 printedImageNotYetAvailable = true;
                 Console.WriteLine($"Waiting for the {runtime} s2i image for '{runtimeVersion}' to get imported.");
