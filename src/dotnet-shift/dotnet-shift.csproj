@@ -10,7 +10,7 @@
     <PackageId>dotnet-shift</PackageId>
     <TargetFramework>net7.0</TargetFramework>
     <TargetFrameworks>net6.0;net7.0</TargetFrameworks>
-    <ImplicitUsings>disable</ImplicitUsings>
+    <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>

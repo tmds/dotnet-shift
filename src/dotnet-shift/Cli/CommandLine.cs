@@ -16,11 +16,11 @@ class CommandLine<TContext>
 
     protected Filter? ContextExceptionHandler { get; set; }
 
-    protected void Configure(CliRootCommand command, System.Action<CliConfiguration> configure)
+    protected void Configure(CliRootCommand command, Action<CliConfiguration> configure)
     {
         if (_config is not null)
         {
-            throw new System.InvalidOperationException();
+            throw new InvalidOperationException();
         }
         _config = new CliConfiguration(command);
         configure?.Invoke(_config);
@@ -102,7 +102,7 @@ class CommandLine<TContext>
 
         public Handler Build()
         {
-            Handler handler = _handler ?? throw new System.InvalidOperationException("Handler is not set.");
+            Handler handler = _handler ?? throw new InvalidOperationException("Handler is not set.");
 
             if (_filters is not null)
             {

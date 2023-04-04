@@ -127,14 +127,14 @@ sealed partial class AppCommandLine
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
                 (wordToComplete == "~" || wordToComplete.StartsWith("~/")))
             {
-                string home = Path.GetFullPath(System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile,
-                                                                    System.Environment.SpecialFolderOption.DoNotVerify));
+                string home = Path.GetFullPath(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile,
+                                                                         Environment.SpecialFolderOption.DoNotVerify));
                 pathToComplete = $"{home}{wordToComplete.Substring(1)}";
             }
 
             // Directory to search.
             string directory;
-            System.Func<string, bool> pathFilter;
+            Func<string, bool> pathFilter;
             if (Directory.Exists(pathToComplete))
             {
                 directory = pathToComplete;
@@ -145,7 +145,7 @@ sealed partial class AppCommandLine
                 directory = Path.GetDirectoryName(pathToComplete)!;
                 if (!Directory.Exists(directory))
                 {
-                    return System.Array.Empty<CompletionItem>();
+                    return Array.Empty<CompletionItem>();
                 }
                 pathFilter = path => path.StartsWith(pathToComplete);
             }

@@ -83,7 +83,7 @@ partial class AppCommandLine
 
     private void AddOptionsSorted(CliCommand command, params CliSymbol[] symbols)
     {
-        System.Array.Sort(symbols, (CliSymbol lhs, CliSymbol rhs) => lhs.Name.CompareTo(rhs.Name));
+        Array.Sort(symbols, (CliSymbol lhs, CliSymbol rhs) => lhs.Name.CompareTo(rhs.Name));
         foreach (var symbol in symbols)
         {
             command.Add(symbol);
@@ -319,12 +319,12 @@ partial class AppCommandLine
     {
         var services = ctx.Services;
         var Console = services.Console;
-        System.Exception? printException = null;
+        Exception? printException = null;
         try
         {
             return await next(ctx, cancellatinToken);
         }
-        catch (System.OperationCanceledException ce)
+        catch (OperationCanceledException ce)
         {
             Console.WriteLine();
             Console.WriteErrorLine("The command was aborted by the user.");
@@ -375,7 +375,7 @@ partial class AppCommandLine
             }
             printException = clientException;
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             Console.WriteLine();
             Console.WriteErrorLine("An unexpected exception occurred while handling the command.");

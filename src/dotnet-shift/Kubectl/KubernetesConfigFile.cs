@@ -3,7 +3,6 @@ namespace Kubectl;
 using k8s;
 using k8s.KubeConfigModels;
 using System.Runtime.InteropServices;
-using Uri = System.Uri;
 
 sealed class KubernetesConfigFile : ILoginContextRepository
 {
@@ -141,7 +140,7 @@ sealed class KubernetesConfigFile : ILoginContextRepository
 
         WriteConfigFile(_configFilePath, config);
 
-        static IEnumerable<T> AppendToList<T>(IEnumerable<T>? items, T item, System.Func<T, string> getName)
+        static IEnumerable<T> AppendToList<T>(IEnumerable<T>? items, T item, Func<T, string> getName)
         {
             List<T> merged = new();
             if (items is not null)
