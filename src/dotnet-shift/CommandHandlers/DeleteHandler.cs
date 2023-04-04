@@ -59,7 +59,7 @@ sealed partial class DeleteHandler
                     await client.DeleteBuildConfigAsync(resource.Name, cancellationToken);
                     break;
                 default:
-                    throw new System.NotImplementedException($"{resource.Type} can not be deleted.");
+                    throw new NotImplementedException($"{resource.Type} can not be deleted.");
             }
         }
     }
@@ -153,9 +153,9 @@ sealed partial class DeleteHandler
         string selector,
         IOpenShiftClient client,
         ResourceType type,
-        System.Func<IOpenShiftClient, string, CancellationToken, Task<IEnumerable<TResource>>> findResources,
-        System.Func<TResource, string> getName,
-        System.Func<TResource, IDictionary<string, string>> getLabels,
+        Func<IOpenShiftClient, string, CancellationToken, Task<IEnumerable<TResource>>> findResources,
+        Func<TResource, string> getName,
+        Func<TResource, IDictionary<string, string>> getLabels,
         CancellationToken cancellationToken)
     {
         var items = await findResources(client, selector, cancellationToken);

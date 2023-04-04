@@ -1,7 +1,5 @@
 namespace CommandHandlers;
 
-using System;
-using System.Collections.Generic;
 using OpenShift;
 
 sealed partial class DeployHandler

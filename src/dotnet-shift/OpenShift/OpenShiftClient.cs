@@ -14,7 +14,7 @@ partial class OpenShiftClient : IOpenShiftClient
     {
         BaseUrl = server;
         Namespace = @namespace;
-        _settings = new System.Lazy<Newtonsoft.Json.JsonSerializerSettings>(CreateSerializerSettings);
+        _settings = new Lazy<Newtonsoft.Json.JsonSerializerSettings>(CreateSerializerSettings);
         _httpClient = new HttpClient(new MessageHandler(token, skipTlsVerify, Host));
     }
 
@@ -25,7 +25,7 @@ partial class OpenShiftClient : IOpenShiftClient
         return settings;
     }
 
-    private OpenShiftClientException CreateApiException(string message, int statusCode, string response, System.Collections.Generic.IReadOnlyDictionary<string, System.Collections.Generic.IEnumerable<string>> headers, System.Exception innerException)
+    private OpenShiftClientException CreateApiException(string message, int statusCode, string response, IReadOnlyDictionary<string, IEnumerable<string>> headers, Exception innerException)
     {
         // NSwag does 'throw new ApiException' which we search and replace by 'throw CreateApiException'.
         // Here we map the arguments to what we want for OpenShiftClientException.
@@ -73,11 +73,11 @@ partial class OpenShiftClient : IOpenShiftClient
             {
                 return await base.SendAsync(request, cancellationToken);
             }
-            catch (System.OperationCanceledException)
+            catch (OperationCanceledException)
             {
                 throw;
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
                 throw new OpenShiftClientException(_host, ex.Message, OpenShiftClientExceptionCause.ConnectionIssue, httpStatusCode: null, responseText: null, ex);
             }
@@ -101,7 +101,7 @@ partial class OpenShiftClient : IOpenShiftClient
     }
 
     private System.Net.Http.HttpClient _httpClient;
-    private System.Lazy<Newtonsoft.Json.JsonSerializerSettings> _settings;
+    private Lazy<Newtonsoft.Json.JsonSerializerSettings> _settings;
 
     private string BaseUrl { get; }
 
@@ -113,7 +113,7 @@ partial class OpenShiftClient : IOpenShiftClient
     {
         get
         {
-            System.Uri.TryCreate(BaseUrl, System.UriKind.Absolute, out System.Uri uri);
+            Uri.TryCreate(BaseUrl, UriKind.Absolute, out Uri uri);
             return uri?.Host ?? "";
         }
     }

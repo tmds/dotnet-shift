@@ -1,8 +1,6 @@
 namespace CommandHandlers;
 
 using OpenShift;
-using System.Net.Http;
-using System.Security.Authentication;
 
 sealed class LoginHandler
 {
@@ -137,7 +135,7 @@ sealed class LoginHandler
         Console.WriteLine($"The login context '{login.Name}' was {(isUpdate ? "updated" : "added")}.");
         Console.WriteLine();
 
-        System.Uri.TryCreate(login.Server, System.UriKind.Absolute, out var uri);
+        Uri.TryCreate(login.Server, UriKind.Absolute, out var uri);
         Console.WriteLine($"Using namespace '{login.Namespace}' on server '{uri?.Host}'.");
 
         return 0;

@@ -67,7 +67,7 @@ sealed partial class DeployHandler
             }
 
             // Print a message if the image doesn't become available after a short time.
-            System.TimeSpan elapsed = stopwatch.Elapsed;
+            TimeSpan elapsed = stopwatch.Elapsed;
             if (!printedImageNotYetAvailable &&
                 elapsed > ShortFeedbackTimeout)
             {
