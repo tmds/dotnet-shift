@@ -119,9 +119,26 @@ sealed partial class ListHandler
         AnsiConsole.Write(grid);
 
         static string FormatDeployment(Item item)
-            => item.Deployment is not null ? item.Deployment.Metadata.Name :
-               item.DeploymentConfig is not null ? $"dc/{item.DeploymentConfig.Metadata.Name}" :
-               "(none)";
+        {
+            if (item.Deployment is { } deployment)
+            {
+                string name = deployment.Metadata.Name;
+                int replicas = deployment.Status.Replicas ?? 0;
+                int readyReplicas = deployment.Status.ReadyReplicas ?? 0;
+                return $"{name} ({readyReplicas}/{replicas})";
+            }
+            else if (item.DeploymentConfig is { } deploymentConfig)
+            {
+                string name = deploymentConfig.Metadata.Name;
+                int replicas = deploymentConfig.Status.Replicas;
+                int readyReplicas = deploymentConfig.Status.ReadyReplicas ?? 0;
+                return $"dc/{name} ({readyReplicas}/{replicas})";
+            }
+            else
+            {
+                return "(none)";
+            }
+        }
 
         static string FormatBuild(BuildConfig build)
             => build.GetName();
@@ -130,10 +147,14 @@ sealed partial class ListHandler
             => service.GetName();
 
         static string FormatRoute(Route route)
-            => $"[link={route.GetRouteUrl()}]{route.Metadata.Name}[/]";
+            => !System.Console.IsOutputRedirected ? $"[link={route.GetRouteUrl()}]{route.Metadata.Name}[/]"
+                                                  : route.Metadata.Name;
 
         static string FormatPod(Pod pod)
-            => $"{pod.Metadata.Name} ({pod.Status.Phase})";
+        {
+            PodStatusPhase phase = pod.Status.Phase ?? PodStatusPhase.Unknown;
+            return $"{pod.Metadata.Name} ({phase.ToString().Substring(0, 1)})";
+        }
     }
 
     private async Task AddPodsToItemsAsync(IOpenShiftClient client, List<Item> items, CancellationToken cancellationToken)
