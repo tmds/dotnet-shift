@@ -161,7 +161,7 @@ sealed partial class DeployHandler
         {
             if (!build.IsBuildSuccess())
             {
-                BuildCondition? failureCondition = build.Status.Conditions.FirstOrDefault(c => c.Type == build.Status.Phase);
+                BuildCondition? failureCondition = build.Status.Conditions?.FirstOrDefault(c => c.Type == build.Status.Phase);
                 string withReason = DescribeConditionAsWith(failureCondition);
                 switch (build.Status.Phase)
                 {
@@ -242,7 +242,7 @@ sealed partial class DeployHandler
             }
 
             // Check if we're deploying the right image.
-            string? deployedImage = deployment.Spec.Template.Spec.Containers.FirstOrDefault(c => c.Name == ContainerName)?.Image;
+            string? deployedImage = deployment.Spec.Template.Spec.Containers?.FirstOrDefault(c => c.Name == ContainerName)?.Image;
             if (!isImageDeployed)
             {
                 isImageDeployed = deployedImage == builtImage;
@@ -293,8 +293,8 @@ sealed partial class DeployHandler
                     TimeSpan elapsed = imageDeployStopwatch.Elapsed;
                     if (elapsed > ShortFeedbackTimeout)
                     {
-                        DeploymentCondition2? progressCondition = deployment.Status.Conditions.FirstOrDefault(c => c.Type == "Progressing");
-                        DeploymentCondition2? replicaFailureCondition = deployment.Status.Conditions.FirstOrDefault(c => c.Type == "ReplicaFailure");
+                        DeploymentCondition2? progressCondition = deployment.Status.Conditions?.FirstOrDefault(c => c.Type == "Progressing");
+                        DeploymentCondition2? replicaFailureCondition = deployment.Status.Conditions?.FirstOrDefault(c => c.Type == "ReplicaFailure");
 
                         // Report on replica set issues.
                         if (replicaFailureCondition?.Status == "True")
@@ -375,8 +375,8 @@ sealed partial class DeployHandler
                     previousGenerationProgressCondition = null;
                     previousGenerationReplicaFailureCondition = null;
 
-                    DeploymentCondition2? progressCondition = deployment.Status.Conditions.FirstOrDefault(c => c.Type == "Progressing");
-                    DeploymentCondition2? replicaFailureCondition = deployment.Status.Conditions.FirstOrDefault(c => c.Type == "ReplicaFailure");
+                    DeploymentCondition2? progressCondition = deployment.Status.Conditions?.FirstOrDefault(c => c.Type == "Progressing");
+                    DeploymentCondition2? replicaFailureCondition = deployment.Status.Conditions?.FirstOrDefault(c => c.Type == "ReplicaFailure");
 
                     // Check for progress.
                     if (progressCondition?.Status == "True")

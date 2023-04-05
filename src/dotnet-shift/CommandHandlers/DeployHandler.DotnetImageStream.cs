@@ -43,7 +43,7 @@ sealed partial class DeployHandler
                 return false;
             }
 
-            NamedTagEventList? tagStatus = current.Status.Tags.FirstOrDefault(t => t.Tag == runtimeVersion);
+            NamedTagEventList? tagStatus = current.Status.Tags?.FirstOrDefault(t => t.Tag == runtimeVersion);
             if (tagStatus is not null)
             {
                 if (tagStatus.Items is { Count: > 0 })
@@ -51,7 +51,7 @@ sealed partial class DeployHandler
                     return true;
                 }
 
-                TagEventCondition? importCondition = tagStatus.Conditions.FirstOrDefault(t => t.Type == "ImportSuccess");
+                TagEventCondition? importCondition = tagStatus.Conditions?.FirstOrDefault(t => t.Type == "ImportSuccess");
                 if (importCondition?.Status == "False")
                 {
                     Console.WriteErrorLine($"The {runtime} s2i image is not available for '{runtimeVersion}.' The image could not be imported: \"{importCondition.Message}\".");
