@@ -87,10 +87,6 @@ sealed partial class DeployHandler
                             {
                                 Name = ContainerName,
                                 Image = imageStreamTagName,
-                                SecurityContext = new()
-                                {
-                                    Privileged = false
-                                },
                                 Ports = new()
                                 {
                                     new()
