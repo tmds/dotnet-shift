@@ -43,7 +43,7 @@ sealed partial class DeployHandler
             },
             Spec = new()
             {
-                Type = ServiceSpecType.ClusterIP,
+                Type = null, // defaults to 'ClusterIP'.
                 Selector = selectorLabels,
                 Ports = new()
                 {
