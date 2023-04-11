@@ -17,28 +17,8 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task DeleteBuildConfigAsync(string name, CancellationToken cancellationToken)
         => DeleteBuildOpenshiftIoV1NamespacedBuildConfigAsync(name, Namespace, cancellationToken: cancellationToken);
 
-    public async Task<BuildConfig> ReplaceBuildConfigAsync(BuildConfig? previous, BuildConfig buildConfig, Action<BuildConfig, BuildConfig>? update, CancellationToken cancellationToken)
-    {
-        do
-        {
-            previous ??= await GetBuildConfigAsync(buildConfig.Metadata.Name, cancellationToken)
-                         ?? throw CreateApiException("Resource not found.", 404, null, null, null);
-
-            update?.Invoke(previous, buildConfig);
-
-            buildConfig.Metadata.ResourceVersion = previous.Metadata.ResourceVersion;
-
-            try
-            {
-                return await ReplaceBuildOpenshiftIoV1NamespacedBuildConfigAsync(buildConfig, buildConfig.Metadata.Name, Namespace);
-            }
-            catch (OpenShiftClientException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.Conflict)
-            {
-                // The object was changed, we need to refresh our object (and its resource version).
-                previous = null;
-            }
-        } while (true);
-    }
+    public Task<BuildConfig> ReplaceBuildConfigAsync(BuildConfig buildConfig, CancellationToken cancellationToken)
+        => ReplaceBuildOpenshiftIoV1NamespacedBuildConfigAsync(buildConfig, buildConfig.Metadata.Name, Namespace, cancellationToken: cancellationToken);
 
     private async Task<BuildConfig?> ReadBuildOpenshiftIoV1NamespacedBuildConfigAsync(string name, string @namespace, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {

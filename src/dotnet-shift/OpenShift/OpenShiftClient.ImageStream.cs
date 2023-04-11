@@ -17,28 +17,8 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task DeleteImageStreamAsync(string name, CancellationToken cancellationToken)
         => DeleteImageOpenshiftIoV1NamespacedImageStreamAsync(name, Namespace, cancellationToken: cancellationToken);
 
-    public async Task<ImageStream> ReplaceImageStreamAsync(ImageStream? previous, ImageStream imageStream, Action<ImageStream, ImageStream>? update, CancellationToken cancellationToken)
-    {
-        do
-        {
-            previous ??= await GetImageStreamAsync(imageStream.Metadata.Name, cancellationToken)
-                         ?? throw CreateApiException("Resource not found.", 404, null, null, null);
-
-            update?.Invoke(previous, imageStream);
-
-            imageStream.Metadata.ResourceVersion = previous.Metadata.ResourceVersion;
-
-            try
-            {
-                return await ReplaceImageOpenshiftIoV1NamespacedImageStreamAsync(imageStream, imageStream.Metadata.Name, Namespace);
-            }
-            catch (OpenShiftClientException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.Conflict)
-            {
-                // The object was changed, we need to refresh our object (and its resource version).
-                previous = null;
-            }
-        } while (true);
-    }
+    public Task<ImageStream> ReplaceImageStreamAsync(ImageStream imageStream, CancellationToken cancellationToken)
+        => ReplaceImageOpenshiftIoV1NamespacedImageStreamAsync(imageStream, imageStream.Metadata.Name, Namespace, cancellationToken: cancellationToken);
 
     private async Task<ImageStream?> ReadImageOpenshiftIoV1NamespacedImageStreamAsync(string name, string @namespace, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {

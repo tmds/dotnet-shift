@@ -18,28 +18,8 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task<ConfigMap> PatchConfigMapAsync(ConfigMap configMap, CancellationToken cancellationToken)
         => PatchCoreV1NamespacedConfigMapAsync(configMap, configMap.Metadata.Name, Namespace, cancellationToken: cancellationToken);
 
-    public async Task<ConfigMap> ReplaceConfigMapAsync(ConfigMap? previous, ConfigMap configMap, Action<ConfigMap, ConfigMap>? update, CancellationToken cancellationToken)
-    {
-        do
-        {
-            previous ??= await GetConfigMapAsync(configMap.Metadata.Name, cancellationToken)
-                         ?? throw CreateApiException("Resource not found.", 404, null, null, null);
-
-            update?.Invoke(previous, configMap);
-
-            configMap.Metadata.ResourceVersion = previous.Metadata.ResourceVersion;
-
-            try
-            {
-                return await ReplaceCoreV1NamespacedConfigMapAsync(configMap, configMap.Metadata.Name, Namespace);
-            }
-            catch (OpenShiftClientException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.Conflict)
-            {
-                // The object was changed, we need to refresh our object (and its resource version).
-                previous = null;
-            }
-        } while (true);
-    }
+    public Task<ConfigMap> ReplaceConfigMapAsync(ConfigMap configMap, CancellationToken cancellationToken)
+        => ReplaceCoreV1NamespacedConfigMapAsync(configMap, configMap.Metadata.Name, Namespace, cancellationToken: cancellationToken);
 
     private async Task<ConfigMap?> ReadCoreV1NamespacedConfigMapAsync(string name, string @namespace, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
