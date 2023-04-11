@@ -50,14 +50,16 @@ sealed partial class AppCommandLine
         public static readonly CliArgument<string> RequiredContextArgument =
             new CliArgument<string>(CONTEXT)
             {
-                CompletionSources = { GetContextSuggestions }
+                CompletionSources = { GetContextSuggestions },
+                HelpName = CONTEXT
             };
 
         public static readonly CliArgument<string> RequiredDeployProjectArgument =
             new CliArgument<string>(PROJECT)
             {
                 DefaultValueFactory = _ => ".",
-                CompletionSources = { GetProjectSuggestions }
+                CompletionSources = { GetProjectSuggestions },
+                HelpName = PROJECT
             };
 
         public static readonly CliOption<bool> ExposeOption =
@@ -103,7 +105,8 @@ sealed partial class AppCommandLine
             new CliOption<string?>("--context")
             {
                 Description = "The connection context [default: current context]",
-                CompletionSources = { GetContextSuggestions }
+                CompletionSources = { GetContextSuggestions },
+                HelpName = CONTEXT
             };
 
         private static IEnumerable<CompletionItem> GetContextSuggestions(CompletionContext context)
