@@ -2,7 +2,7 @@
 
 An opinionated .NET cli tool for working with OpenShift.
 
-# Usage
+## Usage
 
 Install .NET 6 or .NET 7 using the instructions at https://learn.microsoft.com/en-us/dotnet/core/install/.
 
@@ -28,3 +28,46 @@ Deploy the application to the cluster:
 ```
 $ dotnet shift deploy --expose /tmp/web
 ```
+
+## .NET Project Configuration
+
+### ContainerEnvironmentVariable
+
+Adds an environment variable in the container.
+
+**Example:**
+
+```xml
+<ItemGroup>
+  <ContainerEnvironmentVariable Include="LOGGER_VERBOSITY" Value="Trace" />
+</ItemGroup>
+```
+
+## ConfigMap
+
+The application is deployed with a `ConfigMap` with the same name as the application.
+
+The `ConfigMap` is prepopulated with an empty `appsettings.json` entry.
+
+```yaml
+kind: ConfigMap
+apiVersion: v1
+data:
+  appsettings.json: |-
+    {
+    }
+```
+
+The `ConfigMap` is **not** overwritten when the application is re-deployed.
+
+The `ConfigMap` is mounted in the container at `/config`.
+
+The `appsettings.json` file can be added to the ASP.NET configuration by using the following code:
+
+```cs
+var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddJsonFile("/config/appsettings.json", optional: true, reloadOnChange: true);
+```
+
+The `reloadOnChange: true` argument causes the application to pick up changes made to the `ConfigMap`
+without requiring a restart.
