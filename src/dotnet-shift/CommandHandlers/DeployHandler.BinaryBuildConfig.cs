@@ -7,7 +7,7 @@ sealed partial class DeployHandler
     private async Task<BuildConfig> ApplyBinaryBuildConfig(
         IOpenShiftClient client,
         string name,
-        BuildConfig? current,
+        BuildConfig? previous,
         string appImageStreamTag,
         string s2iImageStreamTag,
         Dictionary<string, string> labels,
@@ -19,13 +19,13 @@ sealed partial class DeployHandler
                 s2iImageStreamTag,
                 labels);
 
-        if (current is null)
+        if (previous is null)
         {
             return await client.CreateBuildConfigAsync(buildConfig, cancellationToken);
         }
         else
         {
-            return await client.PatchBuildConfigAsync(buildConfig, cancellationToken);
+            return await client.ReplaceBuildConfigAsync(previous, buildConfig, update: null, cancellationToken);
         }
     }
 

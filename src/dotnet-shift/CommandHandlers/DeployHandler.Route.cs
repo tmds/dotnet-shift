@@ -7,7 +7,7 @@ sealed partial class DeployHandler
     private async Task<Route> ApplyAppRoute(
         IOpenShiftClient client,
         string name,
-        Route? current,
+        Route? previous,
         string serviceName,
         Dictionary<string, string> labels,
         CancellationToken cancellationToken)
@@ -17,13 +17,13 @@ sealed partial class DeployHandler
                 serviceName,
                 labels);
 
-        if (current is null)
+        if (previous is null)
         {
             return await client.CreateRouteAsync(route, cancellationToken);
         }
         else
         {
-            return await client.PatchRouteAsync(route, cancellationToken);
+            return await client.ReplaceRouteAsync(previous, route, update: null, cancellationToken);
         }
     }
 

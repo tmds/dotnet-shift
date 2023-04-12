@@ -7,7 +7,7 @@ sealed partial class DeployHandler
     private async Task<Service> ApplyAppService(
         IOpenShiftClient client,
         string name,
-        Service? current,
+        Service? previous,
         Dictionary<string, string> labels,
         Dictionary<string, string> selectorLabels,
         CancellationToken cancellationToken)
@@ -17,13 +17,13 @@ sealed partial class DeployHandler
                 labels,
                 selectorLabels);
 
-        if (current is null)
+        if (previous is null)
         {
             return await client.CreateServiceAsync(service, cancellationToken);
         }
         else
         {
-            return await client.PatchServiceAsync(service, cancellationToken);
+            return await client.ReplaceServiceAsync(previous, service, update: null, cancellationToken);
         }
     }
 

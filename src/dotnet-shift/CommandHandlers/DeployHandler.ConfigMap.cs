@@ -7,7 +7,7 @@ sealed partial class DeployHandler
     private static async Task<ConfigMap> ApplyAppConfigMap(
         IOpenShiftClient client,
         string name,
-        ConfigMap? current,
+        ConfigMap? previous,
         string runtime,
         Dictionary<string, string> labels,
         CancellationToken cancellationToken)
@@ -16,14 +16,15 @@ sealed partial class DeployHandler
             name,
             labels,
             runtime,
-            initializeData: current is null);
+            initializeData: previous is null);
 
-        if (current is null)
+        if (previous is null)
         {
             return await client.CreateConfigMapAsync(configMap, cancellationToken);
         }
         else
         {
+            // Patch to preserve user configuration.
             return await client.PatchConfigMapAsync(configMap, cancellationToken);
         }
     }
