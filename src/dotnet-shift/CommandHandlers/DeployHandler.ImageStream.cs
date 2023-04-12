@@ -7,7 +7,7 @@ sealed partial class DeployHandler
     private async Task<ImageStream> ApplyAppImageStream(
         IOpenShiftClient client,
         string name,
-        ImageStream? current,
+        ImageStream? previous,
         Dictionary<string, string> labels,
         CancellationToken cancellationToken)
     {
@@ -15,13 +15,13 @@ sealed partial class DeployHandler
                 name,
                 labels);
 
-        if (current is null)
+        if (previous is null)
         {
             return await client.CreateImageStreamAsync(imageStream, cancellationToken);
         }
         else
         {
-            return await client.PatchImageStreamAsync(imageStream, cancellationToken);
+            return await client.ReplaceImageStreamAsync(previous, imageStream, update: null, cancellationToken);
         }
     }
 

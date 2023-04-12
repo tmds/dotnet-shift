@@ -11,7 +11,7 @@ sealed partial class DeployHandler
     private async Task<Deployment> ApplyAppDeployment(
         IOpenShiftClient client,
         string name,
-        Deployment? current,
+        Deployment? previous,
         string imageStreamTagName,
         string? gitUri, string? gitRef,
         Dictionary<string, string> labels,
@@ -25,13 +25,20 @@ sealed partial class DeployHandler
             labels,
             selectorLabels);
 
-        if (current is null)
+        if (previous is null)
         {
             return await client.CreateDeploymentAsync(deployment, cancellationToken);
         }
         else
         {
-            return await client.PatchDeploymentAsync(deployment, cancellationToken);
+            return await client.ReplaceDeploymentAsync(previous,
+                                                       deployment,
+                                                       update: (previous, update) =>
+                                                       {
+                                                            // Preserve the number of deployed pods.
+                                                            update.Spec.Replicas = previous.Spec.Replicas;
+                                                       },
+                                                       cancellationToken);
         }
     }
 

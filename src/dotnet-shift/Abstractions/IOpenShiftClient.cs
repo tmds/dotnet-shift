@@ -43,4 +43,11 @@ interface IOpenShiftClient
     Task DeleteBuildConfigAsync(string name, CancellationToken cancellationToken);
     Task<PodList> ListPodsAsync(string labelSelector, CancellationToken cancellationToken);
     Task<Build?> GetBuildAsync(string name, CancellationToken cancellationToken);
+    Task<Deployment> ReplaceDeploymentAsync(Deployment? previous, Deployment deployment, Action<Deployment, Deployment>? update, CancellationToken cancellationToken);
+    Task<BuildConfig> ReplaceBuildConfigAsync(BuildConfig? previous, BuildConfig buildConfig, Action<BuildConfig, BuildConfig>? update, CancellationToken cancellationToken);
+    Task<ConfigMap> ReplaceConfigMapAsync(ConfigMap? previous, ConfigMap configMap, Action<ConfigMap, ConfigMap>? update, CancellationToken cancellationToken);
+    Task<DeploymentConfig> ReplaceDeploymentConfigAsync(DeploymentConfig? previous, DeploymentConfig deploymentConfig, Action<DeploymentConfig, DeploymentConfig>? update, CancellationToken cancellationToken);
+    Task<ImageStream> ReplaceImageStreamAsync(ImageStream? previous, ImageStream imageStream, Action<ImageStream, ImageStream>? update, CancellationToken cancellationToken);
+    Task<Route> ReplaceRouteAsync(Route? previous, Route route, Action<Route, Route>? update, CancellationToken cancellationToken);
+    Task<Service> ReplaceServiceAsync(Service? previous, Service service, Action<Service, Service>? update, CancellationToken cancellationToken);
 }

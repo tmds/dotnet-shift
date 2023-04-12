@@ -42,7 +42,7 @@ partial class OpenShiftClient : IOpenShiftClient
         {
             if (message.StartsWith("The HTTP status code of the response was not expected ("))
             {
-                message = $"The HTTP status code of the response was not expected: {(System.Net.HttpStatusCode)statusCode}";
+                message = $"The HTTP status code of the response was not expected: {(System.Net.HttpStatusCode)statusCode} ({statusCode})";
             }
             return message;
         }

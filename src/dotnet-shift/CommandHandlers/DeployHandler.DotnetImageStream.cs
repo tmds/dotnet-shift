@@ -8,19 +8,20 @@ sealed partial class DeployHandler
 
     private async Task<ImageStream> ApplyDotnetImageStreamTag(
         IOpenShiftClient client,
-        ImageStream? current,
+        ImageStream? previous,
         string dotnetVersion,
         CancellationToken cancellationToken)
     {
         string s2iImage = GetS2iImage(dotnetVersion);
         ImageStream imageStream = CreateDotnetImageStream(dotnetVersion, s2iImage);
 
-        if (current is null)
+        if (previous is null)
         {
             return await client.CreateImageStreamAsync(imageStream, cancellationToken);
         }
         else
         {
+            // Patch to preserve other .NET versions.
             return await client.PatchImageStreamAsync(imageStream, cancellationToken);
         }
     }
