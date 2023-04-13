@@ -17,28 +17,8 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task DeleteRouteAsync(string name, CancellationToken cancellationToken)
         => DeleteRouteOpenshiftIoV1NamespacedRouteAsync(name, Namespace, cancellationToken: cancellationToken);
 
-    public async Task<Route> ReplaceRouteAsync(Route? previous, Route route, Action<Route, Route>? update, CancellationToken cancellationToken)
-    {
-        do
-        {
-            previous ??= await GetRouteAsync(route.Metadata.Name, cancellationToken)
-                         ?? throw CreateApiException("Resource not found.", 404, null, null, null);
-
-            update?.Invoke(previous, route);
-
-            route.Metadata.ResourceVersion = previous.Metadata.ResourceVersion;
-
-            try
-            {
-                return await ReplaceRouteOpenshiftIoV1NamespacedRouteAsync(route, route.Metadata.Name, Namespace);
-            }
-            catch (OpenShiftClientException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.Conflict)
-            {
-                // The object was changed, we need to refresh our object (and its resource version).
-                previous = null;
-            }
-        } while (true);
-    }
+    public Task<Route> ReplaceRouteAsync(Route route, CancellationToken cancellationToken)
+        => ReplaceRouteOpenshiftIoV1NamespacedRouteAsync(route, route.Metadata.Name, Namespace, cancellationToken: cancellationToken);
 
     private async Task<Route?> ReadRouteOpenshiftIoV1NamespacedRouteAsync(string name, string @namespace, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {

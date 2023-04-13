@@ -11,28 +11,8 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task DeleteDeploymentConfigAsync(string name, CancellationToken cancellationToken)
         => DeleteAppsOpenshiftIoV1NamespacedDeploymentConfigAsync(name, Namespace, cancellationToken: cancellationToken);
 
-    public async Task<DeploymentConfig> ReplaceDeploymentConfigAsync(DeploymentConfig? previous, DeploymentConfig deploymentConfig, Action<DeploymentConfig, DeploymentConfig>? update, CancellationToken cancellationToken)
-    {
-        do
-        {
-            previous ??= await GetDeploymentConfigAsync(deploymentConfig.Metadata.Name, cancellationToken)
-                         ?? throw CreateApiException("Resource not found.", 404, null, null, null);
-
-            update?.Invoke(previous, deploymentConfig);
-
-            deploymentConfig.Metadata.ResourceVersion = previous.Metadata.ResourceVersion;
-
-            try
-            {
-                return await ReplaceAppsOpenshiftIoV1NamespacedDeploymentConfigAsync(deploymentConfig, deploymentConfig.Metadata.Name, Namespace);
-            }
-            catch (OpenShiftClientException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.Conflict)
-            {
-                // The object was changed, we need to refresh our object (and its resource version).
-                previous = null;
-            }
-        } while (true);
-    }
+    public Task<DeploymentConfig> ReplaceDeploymentConfigAsync(DeploymentConfig deploymentConfig, CancellationToken cancellationToken)
+        => ReplaceAppsOpenshiftIoV1NamespacedDeploymentConfigAsync(deploymentConfig, deploymentConfig.Metadata.Name, Namespace, cancellationToken: cancellationToken);
 
     private async Task<DeploymentConfig?> ReadAppsOpenshiftIoV1NamespacedDeploymentConfigAsync(string name, string @namespace, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {

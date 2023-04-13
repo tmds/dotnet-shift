@@ -19,6 +19,10 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Run tests
+      run: |
+        pushd test/dotnet-shift.Tests && dotnet test && popd
+
     - name: Build packages
       run: |
         VERSION_SUFFIX="build.${{ github.run_number }}"

@@ -16,6 +16,15 @@ class OpenShiftClientException : Exception
         ResponseText = responseText;
     }
 
+    internal OpenShiftClientException(string message, HttpStatusCode httpStatusCode) :
+        base(message, null)
+    {
+        Host = "";
+        Cause = OpenShiftClientExceptionCause.Failed;
+        HttpStatusCode = httpStatusCode;
+        ResponseText = "";
+    }
+
     public string Host { get; }
 
     public OpenShiftClientExceptionCause Cause { get; }

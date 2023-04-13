@@ -18,28 +18,8 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task DeleteServiceAsync(string name, CancellationToken cancellationToken)
         => DeleteCoreV1NamespacedServiceAsync(name, Namespace, cancellationToken: cancellationToken);
 
-    public async Task<Service> ReplaceServiceAsync(Service? previous, Service service, Action<Service, Service>? update, CancellationToken cancellationToken)
-    {
-        do
-        {
-            previous ??= await GetServiceAsync(service.Metadata.Name, cancellationToken)
-                         ?? throw CreateApiException("Resource not found.", 404, null, null, null);
-
-            update?.Invoke(previous, service);
-
-            service.Metadata.ResourceVersion = previous.Metadata.ResourceVersion;
-
-            try
-            {
-                return await ReplaceCoreV1NamespacedServiceAsync(service, service.Metadata.Name, Namespace);
-            }
-            catch (OpenShiftClientException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.Conflict)
-            {
-                // The object was changed, we need to refresh our object (and its resource version).
-                previous = null;
-            }
-        } while (true);
-    }
+    public Task<Service> ReplaceServiceAsync(Service service, CancellationToken cancellationToken)
+        => ReplaceCoreV1NamespacedServiceAsync(service, service.Metadata.Name, Namespace, cancellationToken: cancellationToken);
 
     private async Task<Service?> ReadCoreV1NamespacedServiceAsync(string name, string @namespace, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
