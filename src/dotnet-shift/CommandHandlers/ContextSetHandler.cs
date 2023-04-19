@@ -27,7 +27,13 @@ sealed class ContextSetHandler
 
         KubeConfig.SetCurrentContext(contextName);
 
-        Console.WriteLine($"Using context '{contextName}'.");
+        string? host = null;
+        if (Uri.TryCreate(context.Server, UriKind.Absolute, out Uri? uri))
+        {
+            host = uri.Host;
+        }
+
+        Console.WriteLine($"Using namespace '{context.Namespace}' on server '{host}'.");
 
         return Task.FromResult(CommandResult.Success);
     }
