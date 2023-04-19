@@ -12,11 +12,12 @@ sealed partial class AppCommandLine
         private const string DEPLOYMENT = nameof(DEPLOYMENT);
         private const string CONTEXT = nameof(CONTEXT);
         private const string PROJECT = nameof(PROJECT);
+        private const string NAMESPACE = nameof(NAMESPACE);
 
         public static readonly CliOption<string> RequiredServerOption =
             new CliOption<string>("--server")
             {
-                Description = "The address and port of the Kubernetes API server",
+                Description = "Address and port of the Kubernetes API server",
                 Required = true
             };
 
@@ -37,7 +38,8 @@ sealed partial class AppCommandLine
         public static readonly CliOption<string?> NamespaceOption =
             new CliOption<string?>("--namespace")
             {
-                Description = "The Kubernetes namespace"
+                Description = "Kubernetes namespace",
+                HelpName = NAMESPACE
             };
 
         public static readonly CliOption<string> LoginNameOption =
@@ -104,7 +106,7 @@ sealed partial class AppCommandLine
         public static readonly CliOption<string?> ContextOption =
             new CliOption<string?>("--context")
             {
-                Description = "The connection context [default: current context]",
+                Description = "Connection context [default: current context]",
                 CompletionSources = { GetContextSuggestions },
                 HelpName = CONTEXT
             };
