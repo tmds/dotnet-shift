@@ -289,7 +289,7 @@ partial class AppCommandLine
         string? context = parseResult.GetValue(Options.ContextOption);
 
         LoginContext? loginContext = context is null ? services.KubeConfig.GetCurrentContext()
-                                                     : services.KubeConfig.GetAllContexts(includeTokens: false)
+                                                     : services.KubeConfig.GetAllContexts()
                                                                           .FirstOrDefault(c => c.Name == context);
 
         if (loginContext is null)

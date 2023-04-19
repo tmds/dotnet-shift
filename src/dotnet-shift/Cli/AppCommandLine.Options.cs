@@ -115,7 +115,7 @@ sealed partial class AppCommandLine
         {
             var kubernetesConfigFile = new Kubectl.KubernetesConfigFile();
 
-            var contexts = kubernetesConfigFile.GetAllContexts(includeTokens: false);
+            var contexts = kubernetesConfigFile.GetAllContexts();
 
             return contexts.Where(c => c.Name.StartsWith(context.WordToComplete))
                            .OrderBy(c => c.Name)
