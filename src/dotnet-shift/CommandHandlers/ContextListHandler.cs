@@ -25,25 +25,31 @@ sealed class ContextListHandler
             return Task.FromResult(CommandResult.Success);
         }
 
+        string? currentContextName = KubeConfig.GetCurrentContext()?.Name;
+
         var grid = new Grid();
 
         grid.AddColumn();
         grid.AddColumn();
         grid.AddColumn();
         grid.AddColumn();
+        grid.AddColumn();
 
         grid.AddRow(new[]{
+            "",
             "NAME",
             "SERVER",
             "NAMESPACE",
             "USERNAME",
         });
 
-        foreach (var context in contexts)
+        foreach (var context in contexts.OrderBy(c => c.Name))
         {
+            bool isCurrentContext = context.Name == currentContextName;
             // Add content row 
             grid.AddRow(new[]{
-                context.Name,
+                isCurrentContext ? "*" : " ",
+                isCurrentContext ? $"[bold]{context.Name}[/]" : context.Name,
                 context.Server,
                 context.Namespace,
                 context.Username
