@@ -33,7 +33,7 @@ sealed class KubernetesConfigFile : ILoginContextRepository
             return null;
         }
 
-        return KubeContextToLoginContext(config, context, includeToken: true);
+        return KubeContextToLoginContext(config, context);
     }
 
     public void UpdateContext(LoginContext loginContext, bool setCurrent)
@@ -158,7 +158,7 @@ sealed class KubernetesConfigFile : ILoginContextRepository
         }
     }
 
-    public List<LoginContext> GetAllContexts(bool includeTokens)
+    public List<LoginContext> GetAllContexts()
     {
         List<LoginContext> logins = new();
 
@@ -171,7 +171,7 @@ sealed class KubernetesConfigFile : ILoginContextRepository
 
         foreach (var context in config.Contexts)
         {
-            LoginContext? login = KubeContextToLoginContext(config, context, includeTokens);
+            LoginContext? login = KubeContextToLoginContext(config, context);
 
             if (login is not null)
             {
@@ -182,7 +182,7 @@ sealed class KubernetesConfigFile : ILoginContextRepository
         return logins;
     }
 
-    private static LoginContext? KubeContextToLoginContext(K8SConfiguration config, Context context, bool includeToken)
+    private static LoginContext? KubeContextToLoginContext(K8SConfiguration config, Context context)
     {
         string ns = context.ContextDetails.Namespace;
         string contextId = context.Name;
@@ -199,12 +199,8 @@ sealed class KubernetesConfigFile : ILoginContextRepository
             userName = userName.Substring(0, userName.IndexOf('/'));
         }
 
-        string token = "<secret>"; // keep the real token secret.
-        if (includeToken)
-        {
-            k8s.KubeConfigModels.User? user = config.Users.FirstOrDefault(u => u.Name == userId);
-            token = user?.UserCredentials.Token ?? "";
-        }
+        k8s.KubeConfigModels.User? user = config.Users.FirstOrDefault(u => u.Name == userId);
+        string token = user?.UserCredentials.Token ?? "";
 
         LoginContext? login = null;
 
@@ -271,7 +267,7 @@ sealed class KubernetesConfigFile : ILoginContextRepository
     }
 
     public LoginContext? GetContext(string contextName)
-        => GetAllContexts(includeTokens: true).FirstOrDefault(c => c.Name == contextName);
+        => GetAllContexts().FirstOrDefault(c => c.Name == contextName);
 
     public string GetDefaultName(LoginContext loginContext)
     {

@@ -15,7 +15,7 @@ sealed class ContextSetHandler
 
     public Task<int> ExecuteAsync(string contextName, CancellationToken cancellationToken)
     {
-        List<LoginContext> contexts = KubeConfig.GetAllContexts(includeTokens: true);
+        List<LoginContext> contexts = KubeConfig.GetAllContexts();
 
         LoginContext? context = contexts.FirstOrDefault(c => c.Name == contextName);
 

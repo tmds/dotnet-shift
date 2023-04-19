@@ -15,7 +15,7 @@ sealed class ContextListHandler
 
     public Task<int> ExecuteAsync(CancellationToken cancellationToken)
     {
-        List<LoginContext> contexts = KubeConfig.GetAllContexts(includeTokens: false);
+        List<LoginContext> contexts = KubeConfig.GetAllContexts();
 
         if (contexts.Count == 0)
         {

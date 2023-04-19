@@ -103,7 +103,7 @@ sealed class LoginHandler
             }
         }
 
-        List<LoginContext> contexts = KubeConfig.GetAllContexts(includeTokens: false);
+        List<LoginContext> contexts = KubeConfig.GetAllContexts();
 
         if (string.IsNullOrEmpty(login.Name))
         {
