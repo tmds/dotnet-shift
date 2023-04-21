@@ -74,7 +74,7 @@ sealed partial class DeployHandler
 
         Console.WriteLine($"Deploying '{name}' to namespace '{login.Namespace}' at '{login.Server}'.");
 
-        IOpenShiftClient client = OpenShiftClientFactory.CreateClient(login);
+        using IOpenShiftClient client = OpenShiftClientFactory.CreateClient(login);
 
         // Get the currently deployed resources.
         Console.WriteLine(); // section "resources"
@@ -146,7 +146,7 @@ sealed partial class DeployHandler
         if (resources.Route is { } route)
         {
             Console.WriteLine(); // section "route"
-            Console.WriteLine($"The application is exposed at '{route.GetRouteUrl()}'");
+            Console.WriteLine($"The application is exposed at '{route.GetRouteUrl()}'.");
         }
 
         return CommandResult.Success;

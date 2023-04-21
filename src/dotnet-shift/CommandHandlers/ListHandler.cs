@@ -18,7 +18,7 @@ sealed partial class ListHandler
 
     public async Task<int> ExecuteAsync(LoginContext login, CancellationToken cancellationToken)
     {
-        IOpenShiftClient client = OpenShiftClientFactory.CreateClient(login);
+        using IOpenShiftClient client = OpenShiftClientFactory.CreateClient(login);
 
         List<Item> items = await GetItemsAsync(client, cancellationToken);
 

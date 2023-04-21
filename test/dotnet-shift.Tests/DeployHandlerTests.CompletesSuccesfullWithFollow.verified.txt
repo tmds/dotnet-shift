@@ -1,0 +1,13 @@
+﻿Deploying 'mycomponent' to namespace 'mynamespace' at 'https://myserver.com'.
+
+Retrieving existing resources...
+Updating resources...
+
+Uploading sources from directory '{TempPath}empty-project'...
+The build is running:
+Application built successfully.
+
+The image is being deployed.
+The deployment finished successfully. There is 1 available pod.
+
+The application is exposed at 'http://myroutehost'.
