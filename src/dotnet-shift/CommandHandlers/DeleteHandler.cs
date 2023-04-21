@@ -17,7 +17,7 @@ sealed partial class DeleteHandler
 
     public async Task<int> ExecuteAsync(LoginContext login, string app, CancellationToken cancellationToken)
     {
-        IOpenShiftClient client = OpenShiftClientFactory.CreateClient(login);
+        using IOpenShiftClient client = OpenShiftClientFactory.CreateClient(login);
 
         string selector = $"{ResourceLabels.PartOf}={app}";
         List<Resource> resources = await FindResourcesAsync(client, selector, cancellationToken);

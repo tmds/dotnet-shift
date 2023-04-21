@@ -18,6 +18,11 @@ partial class OpenShiftClient : IOpenShiftClient
         _httpClient = new HttpClient(new MessageHandler(token, skipTlsVerify, Host));
     }
 
+    public void Dispose()
+    {
+        _httpClient?.Dispose();
+    }
+
     private Newtonsoft.Json.JsonSerializerSettings CreateSerializerSettings()
     {
         var settings = new Newtonsoft.Json.JsonSerializerSettings();

@@ -1,6 +1,6 @@
 using OpenShift;
 
-interface IOpenShiftClient
+interface IOpenShiftClient : IDisposable
 {
     string Namespace { get; }
 

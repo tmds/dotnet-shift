@@ -23,66 +23,60 @@ sealed partial class DeployHandler
         {
             var pipe = new Pipe();
 
-            ZipFileToPipeWriter(directory, buildEnvironment, pipe.Writer);
+            CreateFromDirectoryAsync(directory, buildEnvironment, pipe.Writer);
 
             return pipe.Reader.AsStream();
 
-            static async void ZipFileToPipeWriter(string directory, Dictionary<string, string> buildEnvironment, PipeWriter writer)
+            static async void CreateFromDirectoryAsync(string directory, Dictionary<string, string> buildEnvironment, PipeWriter writer)
             {
+                Stream stream = writer.AsStream(leaveOpen: true);
                 try
                 {
-                    CreateFromDirectoryAsync(directory, buildEnvironment, writer);
+                    await Task.Yield();
+                    using (ZipArchive archive = new ZipArchive(stream, ZipArchiveMode.Create))
+                    {
+                        DirectoryInfo di = new DirectoryInfo(directory);
+
+                        string basePath = di.FullName;
+
+                        foreach (FileSystemInfo file in di.EnumerateFileSystemInfos("*",
+                            new EnumerationOptions()
+                            {
+                                RecurseSubdirectories = true,
+                                AttributesToSkip = (FileAttributes)0
+                            }))
+                        {
+                            if (SkipEntry(file.FullName.AsSpan(basePath.Length), file is DirectoryInfo))
+                            {
+                                continue;
+                            }
+
+                            if (file is FileInfo)
+                            {
+                                // Create entry for file:
+                                string entryName = EntryFromPath(file.FullName.AsSpan(basePath.Length));
+                                archive.CreateEntryFromFile(file.FullName, entryName);
+                            }
+                            else
+                            {
+                                // Entry marking an empty dir:
+                                if (file is DirectoryInfo possiblyEmpty && IsDirEmpty(possiblyEmpty))
+                                {
+                                    // FullName never returns a directory separator character on the end,
+                                    // but Zip archives require it to specify an explicit directory:
+                                    string entryName = EntryFromPath(file.FullName.AsSpan(basePath.Length), appendPathSeparator: true);
+                                    archive.CreateEntry(entryName);
+                                }
+                            }
+                        }
+                        WriteBuildEnvironment(archive, directory, buildEnvironment);
+                    }
+                    writer.Complete();
                 }
                 catch (Exception ex)
                 {
                     writer.Complete(ex);
-                }
-            }
-
-            static async void CreateFromDirectoryAsync(string directory, Dictionary<string, string> buildEnvironment, PipeWriter writer)
-            {
-                Stream stream = writer.AsStream();
-                await Task.Yield();
-                using (ZipArchive archive = new ZipArchive(stream, ZipArchiveMode.Create))
-                {
-                    DirectoryInfo di = new DirectoryInfo(directory);
-
-                    string basePath = di.FullName;
-
-                    foreach (FileSystemInfo file in di.EnumerateFileSystemInfos("*",
-                        new EnumerationOptions()
-                        {
-                            RecurseSubdirectories = true,
-                            AttributesToSkip = (FileAttributes)0
-                        }))
-                    {
-                        if (SkipEntry(file.FullName.AsSpan(basePath.Length), file is DirectoryInfo))
-                        {
-                            continue;
-                        }
-
-                        if (file is FileInfo)
-                        {
-                            // Create entry for file:
-                            string entryName = EntryFromPath(file.FullName.AsSpan(basePath.Length));
-                            archive.CreateEntryFromFile(file.FullName, entryName);
-                        }
-                        else
-                        {
-                            // Entry marking an empty dir:
-                            if (file is DirectoryInfo possiblyEmpty && IsDirEmpty(possiblyEmpty))
-                            {
-                                // FullName never returns a directory separator character on the end,
-                                // but Zip archives require it to specify an explicit directory:
-                                string entryName = EntryFromPath(file.FullName.AsSpan(basePath.Length), appendPathSeparator: true);
-                                archive.CreateEntry(entryName);
-                            }
-                        }
-
-                        WriteBuildEnvironment(archive, directory, buildEnvironment);
-                    }
-                }
-                writer.Complete();
+                }                
 
                 static bool SkipEntry(ReadOnlySpan<char> path, bool isDirectory)
                 {
@@ -138,7 +132,7 @@ sealed partial class DeployHandler
             {
                 try
                 {
-                    await CreateFromDirectoryAsync(directory, buildEnvironment, writer.AsStream());
+                    await CreateFromDirectoryAsync(directory, buildEnvironment, writer.AsStream(leaveOpen: true));
                     writer.Complete();
                 }
                 catch (Exception ex)
@@ -226,7 +220,7 @@ sealed partial class DeployHandler
             {
                 try
                 {
-                    await stream.CopyToAsync(writer.AsStream());
+                    await stream.CopyToAsync(writer.AsStream(leaveOpen: true));
                     writer.Complete();
                 }
                 catch (Exception ex)

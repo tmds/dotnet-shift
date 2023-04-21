@@ -37,6 +37,25 @@
     }
   },
   {
+    ApiVersion: v1,
+    Data: {
+      appsettings.json:
+{
+}
+    },
+    Kind: ConfigMap,
+    Metadata: {
+      Labels: {
+        app.kubernetes.io/component: mycomponent,
+        app.kubernetes.io/instance: myapp_2,
+        app.kubernetes.io/managed-by: dotnet-shift,
+        app.kubernetes.io/name: mycomponent,
+        app.kubernetes.io/part-of: myapp_2
+      },
+      Name: mycomponent
+    }
+  },
+  {
     ApiVersion: apps/v1,
     Kind: Deployment,
     Metadata: {
@@ -97,25 +116,6 @@
           ]
         }
       }
-    }
-  },
-  {
-    ApiVersion: v1,
-    Data: {
-      appsettings.json:
-{
-}
-    },
-    Kind: ConfigMap,
-    Metadata: {
-      Labels: {
-        app.kubernetes.io/component: mycomponent,
-        app.kubernetes.io/instance: myapp_2,
-        app.kubernetes.io/managed-by: dotnet-shift,
-        app.kubernetes.io/name: mycomponent,
-        app.kubernetes.io/part-of: myapp_2
-      },
-      Name: mycomponent
     }
   },
   {

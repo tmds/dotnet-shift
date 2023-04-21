@@ -1,10 +1,10 @@
 sealed class MockOpenShiftClientFactory : IOpenShiftClientFactory
 {
-    private readonly IOpenShiftClient _client;
+    private readonly MockOpenShiftServer _server;
 
-    public MockOpenShiftClientFactory(IOpenShiftClient client)
-        => _client = client;
+    public MockOpenShiftClientFactory(MockOpenShiftServer server)
+        => _server = server;
 
     public IOpenShiftClient CreateClient(LoginContext login)
-        => _client;
+        => new MockOpenShiftClient(_server);
 }
