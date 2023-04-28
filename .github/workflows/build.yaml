@@ -21,7 +21,8 @@ jobs:
 
     - name: Run tests
       run: |
-        pushd test/dotnet-shift.Tests && dotnet test && popd
+        pushd test/dotnet-shift.Tests && dotnet test --logger "console;verbosity=detailed" && popd &&
+        pushd test/dotnet-shift.IntegrationTests && dotnet build && popd
 
     - name: Build packages
       run: |

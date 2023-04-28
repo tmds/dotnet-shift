@@ -56,7 +56,7 @@ sealed class ContextListHandler
             });
         }
 
-        AnsiConsole.Write(grid);
+        Console.Write(grid);
 
         return Task.FromResult(CommandResult.Success);
     }

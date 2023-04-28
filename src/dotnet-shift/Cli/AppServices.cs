@@ -11,7 +11,7 @@ sealed class AppServices
     public IGitRepoReader GitRepoReader { get; }
 
     public AppServices(
-        IAnsiConsole? console = null,
+        AnsiConsoleSettings? consoleSettings = null,
         ILogger? logger = null,
         string? workingDirectory = null,
         ILoginContextRepository? kubeConfig = null,
@@ -19,12 +19,12 @@ sealed class AppServices
         IProjectReader? projectReader = null,
         IGitRepoReader? repoReader = null)
     {
-        Console ??= AnsiConsole.Console;
-        Logger ??= NullLogger.Instance;
-        WorkingDirectory ??= Directory.GetCurrentDirectory();
-        KubeConfig ??= new Kubectl.KubernetesConfigFile();
-        OpenShiftClientFactory ??= new OpenShift.OpenShiftClientFactory();
-        ProjectReader ??= new MSBuild.ProjectReader();
-        GitRepoReader ??= new Git.GitRepoReader();
+        Console = consoleSettings is not null ? AnsiConsole.Create(consoleSettings) : AnsiConsole.Console;
+        Logger = logger ?? NullLogger.Instance;
+        WorkingDirectory = workingDirectory ?? Directory.GetCurrentDirectory();
+        KubeConfig = kubeConfig ?? new Kubectl.KubernetesConfigFile();
+        OpenShiftClientFactory = openshiftClientFactory ?? new OpenShift.OpenShiftClientFactory();
+        ProjectReader = projectReader ?? new MSBuild.ProjectReader();
+        GitRepoReader = repoReader ?? new Git.GitRepoReader();
     }
 }

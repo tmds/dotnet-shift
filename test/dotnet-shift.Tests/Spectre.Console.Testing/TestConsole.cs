@@ -61,7 +61,7 @@ public sealed class TestConsole : IAnsiConsole, IDisposable
         {
             Ansi = AnsiSupport.Yes,
             ColorSystem = (ColorSystemSupport)ColorSystem.TrueColor,
-            Out = new AnsiConsoleOutput(_writer),
+            Out = new TestConsoleOutput(_writer),
             Interactive = InteractionSupport.No,
             ExclusivityMode = new NoopExclusivityMode(),
             Enrichment = new ProfileEnrichment
@@ -70,8 +70,6 @@ public sealed class TestConsole : IAnsiConsole, IDisposable
             },
         });
 
-        _console.Profile.Width = 80;
-        _console.Profile.Height = 24;
         _console.Profile.Capabilities.Ansi = true;
         _console.Profile.Capabilities.Unicode = true;
     }

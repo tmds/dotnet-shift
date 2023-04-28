@@ -25,7 +25,7 @@ sealed class ContextGetHandler
         grid.AddRow(new[] { "Namespace:", context.Namespace });
         grid.AddRow(new[] { "Username:", context.Username });
 
-        AnsiConsole.Write(grid);
+        Console.Write(grid);
 
         return Task.FromResult(CommandResult.Success);
     }

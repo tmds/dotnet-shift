@@ -72,7 +72,7 @@ sealed partial class ListHandler
         return unusedBuildConfigs;
     }
 
-    private static void PrintItems(List<Item> items)
+    private void PrintItems(List<Item> items)
     {
         // Sort.
         foreach (var item in items)
@@ -116,7 +116,7 @@ sealed partial class ListHandler
         }
 
         // Write.
-        AnsiConsole.Write(grid);
+        Console.Write(grid);
 
         static string FormatDeployment(Item item)
         {
