@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.CommandLine.Invocation;
 
 namespace Cli;
 
@@ -58,16 +59,13 @@ class CommandLine<TContext>
             set => base.Action = value is null ? null : new MyCliAction(_commandLine, value);
         }
 
-        private sealed class MyCliAction : CliAction
+        private sealed class MyCliAction : AsynchronousCliAction
         {
             private readonly CommandLine<TContext> _commandLine;
             public Handler Handler { get; }
 
             public MyCliAction(CommandLine<TContext> commandLine, Handler handler)
                 => (_commandLine, Handler) = (commandLine, handler);
-
-            public override int Invoke(ParseResult parseResult)
-                => InvokeAsync(parseResult, default).GetAwaiter().GetResult();
 
             public override Task<int> InvokeAsync(ParseResult parseResult, CancellationToken cancellationToken = default)
             {

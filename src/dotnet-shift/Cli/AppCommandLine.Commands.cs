@@ -81,12 +81,12 @@ partial class AppCommandLine
         return command;
     }
 
-    private void AddOptionsSorted(CliCommand command, params CliSymbol[] symbols)
+    private void AddOptionsSorted(CliCommand command, params CliOption[] options)
     {
-        Array.Sort(symbols, (CliSymbol lhs, CliSymbol rhs) => lhs.Name.CompareTo(rhs.Name));
-        foreach (var symbol in symbols)
+        Array.Sort(options, (CliOption lhs, CliOption rhs) => lhs.Name.CompareTo(rhs.Name));
+        foreach (var option in options)
         {
-            command.Add(symbol);
+            command.Add(option);
         }
     }
 

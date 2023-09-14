@@ -3,6 +3,7 @@ namespace OpenShift;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Security;
+using System.Net.WebSockets;
 
 #nullable disable
 
@@ -10,10 +11,16 @@ partial class OpenShiftClient : IOpenShiftClient
 {
     public string Namespace { get; }
 
+    private bool SkipTlsVerify { get; }
+    private string BaseUrl { get; }
+    private string Token { get; }
+
     public OpenShiftClient(string server, string token, string @namespace, bool skipTlsVerify)
     {
         BaseUrl = server;
         Namespace = @namespace;
+        SkipTlsVerify = skipTlsVerify;
+        Token = token;
         _settings = new Lazy<Newtonsoft.Json.JsonSerializerSettings>(CreateSerializerSettings);
         _httpClient = new HttpClient(new MessageHandler(token, skipTlsVerify, Host));
     }
@@ -108,8 +115,6 @@ partial class OpenShiftClient : IOpenShiftClient
     private System.Net.Http.HttpClient _httpClient;
     private Lazy<Newtonsoft.Json.JsonSerializerSettings> _settings;
 
-    private string BaseUrl { get; }
-
     private Newtonsoft.Json.JsonSerializerSettings JsonSerializerSettings { get { return _settings.Value; } }
 
     partial void UpdateJsonSerializerSettings(Newtonsoft.Json.JsonSerializerSettings settings);
@@ -186,6 +191,18 @@ partial class OpenShiftClient : IOpenShiftClient
             var message = "Could not deserialize the response body string as " + typeof(T).FullName + ".";
             throw new OpenShiftClientException(Host, message, OpenShiftClientExceptionCause.UnexpectedResponseContent, httpStatusCode: null, responseText, exception);
         }
+    }
+
+    private ClientWebSocket CreateWebSocket(string subProtocol)
+    {
+        ClientWebSocket webSocket = new ClientWebSocket();
+        webSocket.Options.AddSubProtocol(subProtocol);
+        webSocket.Options.SetRequestHeader("Authorization", $"Bearer {Token}");
+        if (SkipTlsVerify)
+        {
+            webSocket.Options.RemoteCertificateValidationCallback = delegate { return true; };
+        }
+        return webSocket;
     }
 
     struct ObjectResponseResult<T>
