@@ -205,6 +205,17 @@ partial class OpenShiftClient : IOpenShiftClient
         return webSocket;
     }
 
+    private string WebSocketBaseUrl
+    {
+        get
+        {
+            string baseUrl = BaseUrl.TrimEnd('/');
+            baseUrl = baseUrl.Replace("https://", "wss://");
+            baseUrl = baseUrl.Replace("http://", "ws://");
+            return baseUrl;
+        }
+    }
+
     struct ObjectResponseResult<T>
     {
         public ObjectResponseResult(T responseObject, string responseText)
