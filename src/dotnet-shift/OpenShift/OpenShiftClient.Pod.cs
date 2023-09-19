@@ -17,6 +17,9 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task<RemoteProcess> PodExecAsync(string name, IEnumerable<string> command, CancellationToken cancellationToken)
         => ConnectCoreV1NamespacedPodExecAsync(name, Namespace, command, cancellationToken: cancellationToken);
 
+    public Task<PortForward> PodForwardAsync(string name, int port, CancellationToken cancellationToken)
+        => ConnectCoreV1NamespacedPodPortforwardAsync(name, Namespace, new[] { port }, cancellationToken);
+
     private async Task<PodList> ListCoreV1NamespacedPodAsync(string @namespace, bool? allowWatchBookmarks = null, string? @continue = null, string? fieldSelector = null, string? labelSelector = null, int? limit = null, string? resourceVersion = null, string? resourceVersionMatch = null, int? timeoutSeconds = null, bool? watch = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (@namespace == null)
@@ -333,7 +336,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<RemoteProcess> ConnectCoreV1NamespacedPodExecAsync(string name, string @namespace, IEnumerable<string>? command = null, string? container = null, bool stderr = true, bool stdin = false, bool stdout = true, bool tty = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async System.Threading.Tasks.Task<RemoteProcess> ConnectCoreV1NamespacedPodExecAsync(string name, string @namespace, IEnumerable<string>? command = null, string? container = null, bool stderr = true, bool stdin = true, bool stdout = true, bool tty = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
             throw new System.ArgumentNullException("name");
@@ -342,10 +345,7 @@ partial class OpenShiftClient : IOpenShiftClient
             throw new System.ArgumentNullException("@namespace");
 
         var urlBuilder_ = new System.Text.StringBuilder();
-        string baseUrl = BaseUrl.TrimEnd('/');
-        baseUrl = baseUrl.Replace("https://", "wss://");
-        baseUrl = baseUrl.Replace("http://", "ws://");
-        urlBuilder_.Append(baseUrl).Append("/api/v1/namespaces/{namespace}/pods/{name}/exec?");
+        urlBuilder_.Append(WebSocketBaseUrl).Append("/api/v1/namespaces/{namespace}/pods/{name}/exec?");
         urlBuilder_.Replace("{name}", System.Uri.EscapeDataString(ConvertToString(name, System.Globalization.CultureInfo.InvariantCulture)));
         urlBuilder_.Replace("{namespace}", System.Uri.EscapeDataString(ConvertToString(@namespace, System.Globalization.CultureInfo.InvariantCulture)));
         if (command != null)
@@ -370,6 +370,28 @@ partial class OpenShiftClient : IOpenShiftClient
         await webSocket.ConnectAsync(new Uri(urlBuilder_.ToString()), cancellationToken);
 
         return new RemoteProcess(webSocket);
+    }
+
+    private async System.Threading.Tasks.Task<PortForward> ConnectCoreV1NamespacedPodPortforwardAsync(string name, string @namespace, int[] port, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    {
+        if (name == null)
+            throw new System.ArgumentNullException("name");
+
+        if (@namespace == null)
+            throw new System.ArgumentNullException("@namespace");
+
+        var urlBuilder_ = new System.Text.StringBuilder();
+        urlBuilder_.Append(WebSocketBaseUrl).Append("/api/v1/namespaces/{namespace}/pods/{name}/portforward?");
+        urlBuilder_.Replace("{name}", System.Uri.EscapeDataString(ConvertToString(name, System.Globalization.CultureInfo.InvariantCulture)));
+        urlBuilder_.Replace("{namespace}", System.Uri.EscapeDataString(ConvertToString(@namespace, System.Globalization.CultureInfo.InvariantCulture)));
+        urlBuilder_.Append(System.Uri.EscapeDataString("ports") + "=").Append(System.Uri.EscapeDataString(ConvertToString(port, System.Globalization.CultureInfo.InvariantCulture))).Append("&");
+        urlBuilder_.Length--;
+
+        var webSocket = CreateWebSocket("v4.channel.k8s.io");
+
+        await webSocket.ConnectAsync(new Uri(urlBuilder_.ToString()), cancellationToken);
+
+        return new PortForward(webSocket);
     }
 
     private async System.Threading.Tasks.Task<Pod> DeleteCoreV1NamespacedPodAsync(string name, string @namespace, DeleteOptions? body = null, string? dryRun = null, int? gracePeriodSeconds = null, bool? orphanDependents = null, string? propagationPolicy = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
@@ -414,7 +436,7 @@ partial class OpenShiftClient : IOpenShiftClient
             {
                 var json_ = Newtonsoft.Json.JsonConvert.SerializeObject(body, _settings.Value);
                 var content_ = new System.Net.Http.StringContent(json_);
-                content_.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse("*/*");
+                content_.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse("application/json");
                 request_.Content = content_;
                 request_.Method = new System.Net.Http.HttpMethod("DELETE");
                 request_.Headers.Accept.Add(System.Net.Http.Headers.MediaTypeWithQualityHeaderValue.Parse("application/json"));
