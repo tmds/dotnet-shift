@@ -1,5 +1,6 @@
 namespace CommandHandlers;
 
+using System;
 using Newtonsoft.Json;
 using OpenShift;
 
@@ -16,6 +17,7 @@ sealed partial class DeployHandler
         string? gitUri, string? gitRef,
         Dictionary<string, string> labels,
         Dictionary<string, string> selectorLabels,
+        ContainerResources containerLimits,
         CancellationToken cancellationToken)
     {
         Deployment deployment = CreateAppDeployment(
@@ -23,7 +25,8 @@ sealed partial class DeployHandler
             imageStreamTagName,
             gitUri, gitRef,
             labels,
-            selectorLabels);
+            selectorLabels,
+            containerLimits);
 
         if (previous is null)
         {
@@ -35,19 +38,25 @@ sealed partial class DeployHandler
                                                        deployment,
                                                        update: (previous, update) =>
                                                        {
-                                                            // Preserve the number of deployed pods.
-                                                            update.Spec.Replicas = previous.Spec.Replicas;
+                                                           // Preserve the number of deployed pods.
+                                                           update.Spec.Replicas = previous.Spec.Replicas;
+                                                           // Preserve resources set on the previous deployment.
+                                                           FindAppContainer(update.Spec.Template.Spec.Containers)!.Resources ??= FindAppContainer(previous.Spec.Template.Spec.Containers)?.Resources;
                                                        },
                                                        cancellationToken);
         }
     }
+
+    private static Container? FindAppContainer(List<Container> containers)
+        => containers.FirstOrDefault(c => c.Name == ContainerName);
 
     private static Deployment CreateAppDeployment(
         string name,
         string imageStreamTagName,
         string? gitUri, string? gitRef,
         Dictionary<string, string> labels,
-        Dictionary<string, string> selectorLabels)
+        Dictionary<string, string> selectorLabels,
+        ContainerResources containerLimits)
     {
         Dictionary<string, string> annotations = GetAppDeploymentAnnotations(imageStreamTagName, gitUri, gitRef);
 
@@ -110,13 +119,49 @@ sealed partial class DeployHandler
                                         Name = "config-volume",
                                         MountPath = AppConfigMountPath
                                     }
-                                }
+                                },
+                                Resources = CreateResourceRequirements(containerLimits)
                             }
                         }
                     }
                 }
             }
         };
+
+        static ResourceRequirements? CreateResourceRequirements(ContainerResources containerLimits)
+        {
+            // note: resources are updated as a whole, not per setting.
+            // We also return an object when no resource constraints are set to support clearing resource requirements.
+            // Consequently, we don't support preserving constraints set by other means.
+            ResourceRequirements requirements = new();
+            if (containerLimits.ContainerCpuRequest is not null ||
+                containerLimits.ContainerMemoryRequest is not null)
+            {
+                requirements.Requests = new Dictionary<string, string>();
+                if (containerLimits.ContainerMemoryRequest is not null)
+                {
+                    requirements.Requests.Add("memory", containerLimits.ContainerMemoryRequest.ToString());
+                }
+                if (containerLimits.ContainerCpuRequest is not null)
+                {
+                    requirements.Requests.Add("cpu", containerLimits.ContainerCpuRequest.ToString());
+                }
+            }
+            if (containerLimits.ContainerCpuLimit is not null ||
+                containerLimits.ContainerMemoryLimit is not null)
+            {
+                requirements.Limits = new Dictionary<string, string>();
+                if (containerLimits.ContainerMemoryLimit is not null)
+                {
+                    requirements.Limits.Add("memory", containerLimits.ContainerMemoryLimit.ToString());
+                }
+                if (containerLimits.ContainerCpuLimit is not null)
+                {
+                    requirements.Limits.Add("cpu", containerLimits.ContainerCpuLimit.ToString());
+                }
+            }
+            return requirements;
+        }
     }
 
     private static Dictionary<string, string> GetAppDeploymentAnnotations(string imageStreamTagName, string? gitUri, string? gitRef)

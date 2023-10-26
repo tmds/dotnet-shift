@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 sealed class MockProjectReader : IProjectReader
 {
     private readonly ProjectInformation _projectInfo;
@@ -5,6 +7,10 @@ sealed class MockProjectReader : IProjectReader
     public MockProjectReader(ProjectInformation info)
         => _projectInfo = info;
 
-    public ProjectInformation ReadProjectInfo(string path)
-        => _projectInfo;
+    public bool TryReadProjectInfo(string path, [NotNullWhen(true)]out ProjectInformation? projectInformation, out List<string> validationErrors)
+    {
+        validationErrors = new();
+        projectInformation = _projectInfo;
+        return true;
+    }
 }
