@@ -54,9 +54,12 @@ sealed partial class DeployHandler
         string contextDir = FindContextDirectory(projectFileDirectory);
 
         // Read the .NET project.
-        ProjectInformation projectInfo = ProjectReader.ReadProjectInfo(projectFile);
-        if (!IsProjectInformationUsable(Console, projectInfo))
+        if (!ProjectReader.TryReadProjectInfo(projectFile, out ProjectInformation? projectInfo, out List<string> validationErrors))
         {
+            foreach (var error in validationErrors)
+            {
+                Console.WriteErrorLine(error);
+            }
             return CommandResult.Failure;
         }
         Debug.Assert(projectInfo.AssemblyName is not null);
@@ -89,7 +92,7 @@ sealed partial class DeployHandler
         resources = await UpdateResourcesAsync(client, resources, name, binaryBuildConfigName,
                                     runtime, runtimeVersion,
                                     gitUri: gitInfo?.RemoteUrl, gitRef: gitInfo?.RemoteBranch,
-                                    partOf, expose, cancellationToken);
+                                    partOf, expose, projectInfo.ContainerLimits, cancellationToken);
 
         if (startBuild)
         {
@@ -565,6 +568,7 @@ sealed partial class DeployHandler
                                             string runtime, string runtimeVersion,
                                             string? gitUri, string? gitRef,
                                             string partOf, bool expose,
+                                            ContainerResources containerResources,
                                             CancellationToken cancellationToken)
     {
         Dictionary<string, string> componentLabels = GetComponentLabels(partOf, name);
@@ -592,6 +596,7 @@ sealed partial class DeployHandler
                                         gitUri, gitRef,
                                         Merge(componentLabels, runtimeLabels),
                                         selectorLabels,
+                                        containerResources,
                                         cancellationToken
                                     );
 
@@ -700,25 +705,6 @@ sealed partial class DeployHandler
         name = name.Replace(".", "-").ToLowerInvariant();
 
         return name;
-    }
-
-    internal static bool IsProjectInformationUsable(IAnsiConsole Console, ProjectInformation projectInfo)
-    {
-        bool usable = true;
-
-        if (projectInfo.DotnetVersion is null)
-        {
-            Console.WriteErrorLine($"Cannot determine project target framework version.");
-            usable = false;
-        }
-
-        if (projectInfo.AssemblyName is null)
-        {
-            Console.WriteErrorLine($"Cannot determine application assembly name.");
-            usable = false;
-        }
-
-        return usable;
     }
 
     private static void AddStartupProject(Dictionary<string, string> buildEnvironment, string contextDir, string projectFile)

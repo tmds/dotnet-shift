@@ -1,6 +1,4 @@
-using MSBuild;
-
 interface IProjectReader
 {
-    ProjectInformation ReadProjectInfo(string path);
+    public bool TryReadProjectInfo(string path, [NotNullWhen(true)]out ProjectInformation? projectInformation, out List<string> validationErrors);
 }

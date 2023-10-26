@@ -43,6 +43,21 @@ Adds an environment variable in the container.
 </ItemGroup>
 ```
 
+### Resource Requirements
+
+The `ContainerCpuRequest`, `ContainerCpuLimit`, `ContainerMemoryRequest`, `ContainerMemoryLimit` properties can be used to configure cpu and memory requests and limits.
+
+**Example:**
+
+```xml
+<PropertyGroup>
+  <ContainerCpuRequest>0.5</ContainerCpuRequest>
+  <ContainerCpuLimit>2</ContainerCpuLimit>
+  <ContainerMemoryRequest>100M</ContainerMemoryRequest>
+  <ContainerMemoryLimit>200M</ContainerMemoryLimit>
+</PropertyGroup>
+```
+
 ## ConfigMap
 
 The application is deployed with a `ConfigMap` with the same name as the application.
