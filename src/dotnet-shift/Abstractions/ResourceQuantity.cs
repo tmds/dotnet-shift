@@ -1,4 +1,6 @@
 // Represents a valid Quantity (https://kubernetes.io/docs/reference/kubernetes-api/common-definitions/quantity/#Quantity)
+using System.Globalization;
+
 public partial class ResourceQuantity
 {
     private string _value;
@@ -28,14 +30,14 @@ public partial class ResourceQuantity
             {
                 if (char.ToLower(s[si]) == 'e')
                 {
-                    if (!int.TryParse(s.AsSpan(si + 1), out _))
+                    if (!int.TryParse(s.AsSpan(si + 1), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out _))
                     {
                         return false;
                     }
                 }
             }
         }
-        if (decimal.TryParse(number, out _))
+        if (decimal.TryParse(number, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out _))
         {
             result = new ResourceQuantity(s);
             return true;
