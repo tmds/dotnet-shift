@@ -58,6 +58,25 @@ The `ContainerCpuRequest`, `ContainerCpuLimit`, `ContainerMemoryRequest`, `Conta
 </PropertyGroup>
 ```
 
+### Ports
+
+The exposed container ports are derived from the `ASPNETCORE_URLS`, `ASPNETCORE_HTTP_PORTS`, and `ASPNETCORE_HTTPS_PORTS` environment variables.
+
+When building an ASP.NET Core project and none of these environment variables are set (using `ContainerEnvironmentVariable`), `ASPNETCORE_URLS` is set to `http://*:8080`.
+
+Additional ports can be exposed on the container using `ContainerPort`.
+
+**Example:**
+
+```xml
+<ContainerPort Include="8081" Type="tcp"
+               [ IsServicePort="true" Name="web2" ] />
+```
+
+Ports using the ASP.NET Core environment variables are exposed through the Kubernetes Service.
+
+To expose ports added using `ContainerPort`, you must add `IsServicePort = true` and set a `Name` for the port.
+
 ## ConfigMap
 
 The application is deployed with a `ConfigMap` with the same name as the application.

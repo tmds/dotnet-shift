@@ -15,6 +15,7 @@ sealed partial class DeployHandler
         Deployment? previous,
         string imageStreamTagName,
         string? gitUri, string? gitRef,
+        global::ContainerPort[] ports,
         Dictionary<string, string> labels,
         Dictionary<string, string> selectorLabels,
         ContainerResources containerLimits,
@@ -24,6 +25,7 @@ sealed partial class DeployHandler
             name,
             imageStreamTagName,
             gitUri, gitRef,
+            ports,
             labels,
             selectorLabels,
             containerLimits);
@@ -54,6 +56,7 @@ sealed partial class DeployHandler
         string name,
         string imageStreamTagName,
         string? gitUri, string? gitRef,
+        global::ContainerPort[] ports,
         Dictionary<string, string> labels,
         Dictionary<string, string> selectorLabels,
         ContainerResources containerLimits)
@@ -103,15 +106,7 @@ sealed partial class DeployHandler
                             {
                                 Name = ContainerName,
                                 Image = imageStreamTagName,
-                                Ports = new()
-                                {
-                                    new()
-                                    {
-                                        ContainerPort1 = 8080,
-                                        Name = "http",
-                                        Protocol = ContainerPortProtocol.TCP
-                                    }
-                                },
+                                Ports = CreateContainerPorts(ports),
                                 VolumeMounts = new()
                                 {
                                     new()
@@ -162,6 +157,21 @@ sealed partial class DeployHandler
             }
             return requirements;
         }
+    }
+
+    private static List<ContainerPort> CreateContainerPorts(global::ContainerPort[] ports)
+    {
+        return ports.Select(p => new ContainerPort()
+        {
+            ContainerPort1 = p.Port,
+            Name = p.Name,
+            Protocol = p.Type switch
+            {
+                "tcp" => ContainerPortProtocol.TCP,
+                "udp" => ContainerPortProtocol.UDP,
+                _ => throw new ArgumentException(p.Type)
+            }
+        }).ToList();
     }
 
     private static Dictionary<string, string> GetAppDeploymentAnnotations(string imageStreamTagName, string? gitUri, string? gitRef)

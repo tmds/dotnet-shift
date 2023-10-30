@@ -9,12 +9,14 @@ sealed partial class DeployHandler
         string name,
         Route? previous,
         string serviceName,
+        global::ContainerPort targetPort,
         Dictionary<string, string> labels,
         CancellationToken cancellationToken)
     {
         Route route = CreateAppRoute(
                 name,
                 serviceName,
+                targetPort,
                 labels);
 
         if (previous is null)
@@ -30,6 +32,7 @@ sealed partial class DeployHandler
     private static Route CreateAppRoute(
         string name,
         string serviceName,
+        global::ContainerPort targetPort,
         Dictionary<string, string> labels)
     {
         return new Route
@@ -50,7 +53,7 @@ sealed partial class DeployHandler
                 },
                 Port = new()
                 {
-                    TargetPort = "8080"
+                    TargetPort = targetPort.Port.ToString()
                 }
             }
         };

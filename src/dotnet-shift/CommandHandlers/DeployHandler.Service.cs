@@ -1,5 +1,6 @@
 namespace CommandHandlers;
 
+using System;
 using OpenShift;
 
 sealed partial class DeployHandler
@@ -8,12 +9,14 @@ sealed partial class DeployHandler
         IOpenShiftClient client,
         string name,
         Service? previous,
+        global::ContainerPort[] ports,
         Dictionary<string, string> labels,
         Dictionary<string, string> selectorLabels,
         CancellationToken cancellationToken)
     {
         Service service = CreateAppService(
                 name,
+                ports,
                 labels,
                 selectorLabels);
 
@@ -29,6 +32,7 @@ sealed partial class DeployHandler
 
     private static Service CreateAppService(
         string name,
+        global::ContainerPort[] ports,
         Dictionary<string, string> labels,
         Dictionary<string, string> selectorLabels)
     {
@@ -45,16 +49,23 @@ sealed partial class DeployHandler
             {
                 Type = null, // defaults to 'ClusterIP'.
                 Selector = selectorLabels,
-                Ports = new()
-                {
-                    new()
-                    {
-                        Protocol = ServicePortProtocol.TCP,
-                        Port = 8080,
-                        Name = "http"
-                    }
-                }
+                Ports = CreateServicePorts(ports),
             }
         };
+    }
+
+    private static List<ServicePort> CreateServicePorts(global::ContainerPort[] ports)
+    {
+        return ports.Where(p => p.IsServicePort).Select(p => new ServicePort()
+        {
+            Port = p.Port,
+            Name = p.Name,
+            Protocol = p.Type switch
+            {
+                "tcp" => ServicePortProtocol.TCP,
+                "udp" => ServicePortProtocol.UDP,
+                _ => throw new ArgumentException(p.Type)
+            }
+        }).ToList();
     }
 }

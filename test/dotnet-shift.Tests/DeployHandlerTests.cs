@@ -73,8 +73,7 @@ public class DeployHandlerTests : IDisposable
             new()
             {
                 DotnetVersion = "6.0",
-                AssemblyName = "web",
-                ContainerEnvironmentVariables = new()
+                AssemblyName = "web"
             };
 
         MockOpenShiftClientFactory clientFactory = new(server);
@@ -117,8 +116,7 @@ public class DeployHandlerTests : IDisposable
             projectInfo: new()
             {
                 DotnetVersion = "5.0",
-                AssemblyName = "myassembly",
-                ContainerEnvironmentVariables = new()
+                AssemblyName = "myassembly"
             },
             repoInfo: new()
             {
@@ -146,8 +144,7 @@ public class DeployHandlerTests : IDisposable
             projectInfo: new()
             {
                 DotnetVersion = "5.0",
-                AssemblyName = "myassembly",
-                ContainerEnvironmentVariables = new()
+                AssemblyName = "myassembly"
             },
             repoInfo: new()
             {
@@ -243,8 +240,7 @@ public class DeployHandlerTests : IDisposable
             projectInfo: new()
             {
                 DotnetVersion = "3.0",
-                AssemblyName = "myassembly_1",
-                ContainerEnvironmentVariables = new()
+                AssemblyName = "myassembly_1"
             },
             repoInfo: new()
             {
@@ -260,8 +256,7 @@ public class DeployHandlerTests : IDisposable
             projectInfo: new()
             {
                 DotnetVersion = "4.0",
-                AssemblyName = "myassembly_2",
-                ContainerEnvironmentVariables = new()
+                AssemblyName = "myassembly_2"
             },
             repoInfo: new()
             {
