@@ -88,11 +88,27 @@ sealed partial class DeployHandler
         // or the name of the deployment.
         partOf ??= GetPartOf(resources.Deployment?.Metadata?.Labels) ?? name;
 
+        // Update the route if the app is already exposed.
+        expose |= resources.Route is not null;
+        if (expose && projectInfo.ExposedPort is null)
+        {
+            if (projectInfo.ContainerPorts.Length == 0)
+            {
+                Console.WriteErrorLine("The project has no container ports. It's not clear what port to expose.");
+            }
+            else
+            {
+                Console.WriteErrorLine("The project has multiple container ports. It's not clear what port to expose.");
+            }
+            return CommandResult.Failure;
+        }
+    
         Console.WriteLine("Updating resources...");
         resources = await UpdateResourcesAsync(client, resources, name, binaryBuildConfigName,
                                     runtime, runtimeVersion,
                                     gitUri: gitInfo?.RemoteUrl, gitRef: gitInfo?.RemoteBranch,
-                                    partOf, expose, projectInfo.ContainerLimits, cancellationToken);
+                                    partOf, expose, projectInfo.ContainerPorts, projectInfo.ExposedPort,
+                                    projectInfo.ContainerLimits, cancellationToken);
 
         if (startBuild)
         {
@@ -568,6 +584,7 @@ sealed partial class DeployHandler
                                             string runtime, string runtimeVersion,
                                             string? gitUri, string? gitRef,
                                             string partOf, bool expose,
+                                            global::ContainerPort[] ports, global::ContainerPort? exposedPort,
                                             ContainerResources containerResources,
                                             CancellationToken cancellationToken)
     {
@@ -594,6 +611,7 @@ sealed partial class DeployHandler
                                         current.Deployment,
                                         appImageStreamTagName,
                                         gitUri, gitRef,
+                                        ports,
                                         Merge(componentLabels, runtimeLabels),
                                         selectorLabels,
                                         containerResources,
@@ -622,13 +640,14 @@ sealed partial class DeployHandler
                                   cancellationToken);
 
         Route? route = null;
-        if (expose ||
-            current.Route is not null) // Update the route when the application was already exposed.
+        if (expose)
         {
+            Debug.Assert(exposedPort is not null);
             route = await ApplyAppRoute(client,
                                 name,
                                 current.Route,
                                 serviceName: name,
+                                exposedPort,
                                 componentLabels,
                                 cancellationToken);
         }
@@ -636,6 +655,7 @@ sealed partial class DeployHandler
         Service service = await ApplyAppService(client,
                               name,
                               current.Service,
+                              ports,
                               componentLabels,
                               selectorLabels,
                               cancellationToken);
