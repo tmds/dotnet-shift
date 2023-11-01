@@ -7,11 +7,9 @@ using Microsoft.Build.Evaluation;
 
 sealed class ProjectReader : IProjectReader
 {
+    // We don't use ASPNETCORE_HTTP_PORTS and ASPNETCORE_HTTPS_PORTS by design.
+    // ASPNETCORE_URLS takes precedence over these and allows to configure all ports with a single setting.
     private const string ASPNETCORE_URLS = nameof(ASPNETCORE_URLS);
-    private const string ASPNETCORE_HTTP_PORTS = nameof(ASPNETCORE_HTTP_PORTS);
-    private const string ASPNETCORE_HTTPS_PORTS = nameof(ASPNETCORE_HTTPS_PORTS);
-
-    private static readonly string[] AspNetCoreEnvvars = new[] { ASPNETCORE_URLS, ASPNETCORE_HTTP_PORTS, ASPNETCORE_HTTPS_PORTS };
 
     public bool TryReadProjectInfo(string path, [NotNullWhen(true)] out ProjectInformation? projectInformation, out List<string> validationErrors)
     {
@@ -26,7 +24,7 @@ sealed class ProjectReader : IProjectReader
         Dictionary<string, string> environmentVariables = ReadEnvironmentVariables(project, isAspNet);
 
         ContainerResources containerLimits = ReadContainerLimits(validationErrors, project);
-        List<ContainerPort> containerPorts = ReadContainerPorts(project, environmentVariables, validationErrors);
+        ContainerPort[] containerPorts = ReadContainerPorts(project, environmentVariables, validationErrors);
 
         if (validationErrors.Count > 0)
         {
@@ -44,7 +42,7 @@ sealed class ProjectReader : IProjectReader
             AssemblyName = assemblyName!,
             ContainerEnvironmentVariables = environmentVariables,
             ContainerLimits = containerLimits,
-            ContainerPorts = containerPorts.ToArray(),
+            ContainerPorts = containerPorts,
             ExposedPort = exposedPort
         };
 
@@ -122,8 +120,8 @@ sealed class ProjectReader : IProjectReader
                 environmentVariables[envvarItem.EvaluatedInclude] = value;
             }
         }
-        // If the user hasn't set any of the envvars that bind ASP.NET, use http on port 8080.
-        if (isAspNet && !AspNetCoreEnvvars.Any(envvar => environmentVariables.TryGetValue(envvar, out _)))
+        // If the user hasn't set ASPNETCORE_URLS for an ASP.NET Core project, set a default value.
+        if (isAspNet && !environmentVariables.TryGetValue(ASPNETCORE_URLS, out _))
         {
             environmentVariables["ASPNETCORE_URLS"] = "http://*:8080";
         }
@@ -159,100 +157,111 @@ sealed class ProjectReader : IProjectReader
 
     private static Regex AspnetPortRegex = new(@"(?<scheme>\w+)://(?<domain>([*+]|).+):(?<port>\d+)");
 
-    private static List<ContainerPort> ReadContainerPorts(Project project, Dictionary<string, string> environmentVariables, List<string> validationErrors)
+    private static ContainerPort[] ReadContainerPorts(Project project, Dictionary<string, string> environmentVariables, List<string> validationErrors)
     {
-        List<ContainerPort> containerPorts = new();
-        AddPortsFromEnvironment(containerPorts, environmentVariables, validationErrors);
         ProjectItem[] portItems = GetItems(project, "ContainerPort");
+        Dictionary<(string type, int port), (string? name, bool? isServicePort)> ports = new();
+        HashSet<string> names = new();
         foreach (var portItem in portItems)
         {
-            AddContainerPort(containerPorts, name: GetMetadata(portItem, "Name"), type: GetMetadata(portItem, "Type"), port: portItem.EvaluatedInclude, isServicePort: GetMetadata(portItem, "IsServicePort"), validationErrors);
-        }
-        return containerPorts;
-    }
-
-    private static void AddContainerPort(List<ContainerPort> containerPorts, string? name, string? type, string port, string? isServicePort, List<string> validationErrors)
-    {
-        bool valid = true;
-        if (!int.TryParse(port, out int portNumber))
-        {
-            validationErrors.Add($"Invalid port number '{port}'");
-            valid = false;
-        }
-        type ??= "tcp";
-        if (type is not ("tcp" or "udp"))
-        {
-            validationErrors.Add($"Invalid port type '{type}'");
-            valid = false;
-        }
-        isServicePort ??= "false";
-        if (isServicePort is not ("true" or "false"))
-        {
-            validationErrors.Add($"IsServicePort must be 'true' or 'false'.");
-            valid = false;
-        }
-        if (isServicePort == "true" && string.IsNullOrEmpty(name))
-        {
-            validationErrors.Add($"Service ports must have a name.'");
-            valid = false;
-        }
-        if (name is not null && containerPorts.Any(p => p.Name == name))
-        {
-            validationErrors.Add($"A port named '{name}' is added multiple times.");
-            valid = false;
-        }
-        if (containerPorts.Any(p => p.Type == type && p.Port == portNumber))
-        {
-            validationErrors.Add($"Port '{type}/{portNumber}' is added multiple times.");
-            valid = false;
-        }
-        if (valid)
-        {
-            containerPorts.Add(new ContainerPort()
+            string? name = GetMetadata(portItem, "Name");
+            string type = GetMetadata(portItem, "Type") ?? "tcp";
+            if (type is not "tcp" and not "udp")
             {
-                Name = name,
-                Port = portNumber,
-                Type = type,
-                IsServicePort = isServicePort == "true"
-            });
+                validationErrors.Add($"ContainerPort Type must be 'tcp' or 'udp'.");
+            }
+            bool? isServicePort = null;
+            switch (GetMetadata(portItem, "IsServicePort"))
+            {
+                case null:
+                    isServicePort = null;
+                    break;
+                case "true":
+                    isServicePort = true;
+                    break;
+                case "false":
+                    isServicePort = false;
+                    break;
+                default:
+                    validationErrors.Add($"IsServicePort must be 'true' or 'false'.");
+                    break;
+            }
+            if (!int.TryParse(portItem.EvaluatedInclude, out int portNumber))
+            {
+                validationErrors.Add($"Invalid port number '{portItem.EvaluatedInclude}'");
+                portNumber = -1;
+            }
+            if (isServicePort == true && name is null)
+            {
+                validationErrors.Add($"ContainerPort Name must be set when IsServicePort is true.");
+            }
+            if (name is not null)
+            {
+                if (!names.Add(name))
+                {
+                    validationErrors.Add($"ContainerPort Name '{name}' is not unique.");
+                }
+            }
+            if (ports.ContainsKey((type, portNumber)))
+            {
+                validationErrors.Add($"Port '{type}/{portNumber}' is added multiple times.");
+            }
+            if (portNumber != -1)
+            {
+                if (!ports.TryAdd((type, portNumber), (name, isServicePort)))
+                {
+                    validationErrors.Add($"Port '{type}/{portNumber}' is added multiple times.");
+                }
+            }
         }
-    }
-
-    private static void AddPortsFromEnvironment(List<ContainerPort> ports, Dictionary<string, string> envvars, List<string> validationErrors)
-    {
-        if (envvars.TryGetValue(ASPNETCORE_URLS, out string? urls))
+        if (environmentVariables.TryGetValue(ASPNETCORE_URLS, out string? urls))
         {
+            string type = "tcp";
             foreach (var url in Split(urls))
             {
                 var match = AspnetPortRegex.Match(url);
                 if (match.Success)
                 {
-                    AddContainerPort(ports, name: match.Groups["scheme"].Value, type: "tcp", port: match.Groups["port"].Value, isServicePort: "true", validationErrors);
+                    string portMatch = match.Groups["port"].Value;
+                    if (!int.TryParse(portMatch, out int portNumber))
+                    {
+                        validationErrors.Add($"Invalid port number '{portMatch}'");
+                        continue;
+                    }
+                    string name = match.Groups["scheme"].Value;
+                    if (ports.TryGetValue((type, portNumber), out (string? name, bool? isServicePort) current))
+                    {
+                        if (current.name is null)
+                        {
+                            if (!names.Add(name))
+                            {
+                                validationErrors.Add($"ASPNETCORE_URLS port name '{name}' is not unique. You can set the name using a ContainerPort.");
+                            }
+                        }
+                        ports[(type, portNumber)] = (current.name ?? name, current.isServicePort ?? true);
+                    }
+                    else
+                    {
+                        if (!names.Add(name))
+                        {
+                            validationErrors.Add($"ASPNETCORE_URLS port name '{name}' is not unique. You can set the name using a ContainerPort.");
+                        }
+                        ports.Add((type, portNumber), (name, true));
+                    }
                 }
             }
-            return;
         }
-
-        if (envvars.TryGetValue(ASPNETCORE_HTTP_PORTS, out string? httpPorts))
+        return ports.Select(i => new ContainerPort()
         {
-            foreach (var port in Split(httpPorts))
-            {
-                AddContainerPort(ports, "http", "tcp", port, isServicePort: "true", validationErrors);
-            }
-        }
-
-        if (envvars.TryGetValue(ASPNETCORE_HTTP_PORTS, out string? httpsPorts))
-        {
-            foreach (var port in Split(httpsPorts))
-            {
-                AddContainerPort(ports, "https", "tcp", port, isServicePort: "true", validationErrors);
-            }
-        }
+            IsServicePort = i.Value.isServicePort ?? false,
+            Name = i.Value.name,
+            Type = i.Key.type,
+            Port = i.Key.port
+        }).ToArray();
 
         static string[] Split(string input)
         {
             return input.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         }
     }
-
 }
