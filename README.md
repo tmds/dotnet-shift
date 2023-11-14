@@ -31,9 +31,9 @@ $ dotnet shift deploy --expose /tmp/web
 
 ## .NET Project Configuration
 
-### ContainerEnvironmentVariable
+### Environment Variables
 
-Adds an environment variable in the container.
+`ContainerEnvironmentVariable` adds an environment variable in the container.
 
 **Example:**
 
@@ -77,7 +77,22 @@ To make a `ContainerPort` available through the service, you must add `IsService
 Ports from `ASPNETCORE_URLS` may be declared as `ContainerPort` to explicity set their `Name` and `IsServicePort` values.
 The default value for an `ASPNETCORE_URLS` port `Name` is its scheme (e.g. `http`), and for its `IsServicePort` it is `true`.
 
-## ConfigMap
+
+### Persistent Storage
+
+Persistent volume claims can be configured using `ContainerPersistentStorage`.
+
+`Access` can be set to `ReadWriteOnce`, `ReadOnlyMany`, `ReadWriteMany`, `ReadWriteOncePod`.
+The default is `ReadWriteOnce`. When `Access` is `ReadWriteOnce` or `ReadWriteOncePod` the deployment will use the recreate strategy to ensure the previous pod is terminated so the new pod can attach.
+
+**Example:**
+
+```xml
+<ContainerPersistentStorage Include="data" Size="300Mi" Path="/data"
+                            [ Limit="1Gi" StorageClass="myclass" Access="ReadWriteMany" ]/>
+```
+
+## Application ConfigMap
 
 The application is deployed with a `ConfigMap` with the same name as the application.
 

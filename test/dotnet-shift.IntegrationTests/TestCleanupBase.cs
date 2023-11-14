@@ -67,7 +67,7 @@ public class TestCleanupBase : TestOutputBase, IDisposable
                 DeleteHandler handler = new DeleteHandler(AnsiConsole.Console, NullLogger.Instance, new OpenShiftClientFactory());
                 try
                 {
-                    await handler.ExecuteAsync(context, app, default);
+                    await handler.ExecuteAsync(context, app, force: true, default);
                 }
                 catch (Exception ex)
                 {

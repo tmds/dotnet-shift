@@ -31,6 +31,8 @@ static class OpenShiftDataModelHelpers
         => resource.Metadata.Name;
     public static string GetName(this ImageStream resource)
         => resource.Metadata.Name;
+    public static string GetName(this PersistentVolumeClaim resource)
+        => resource.Metadata.Name;
 
     public static bool IsBuildFinished(this Build build)
         => BuildFinishedPhases.Contains(build.Status.Phase);

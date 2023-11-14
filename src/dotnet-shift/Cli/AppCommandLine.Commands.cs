@@ -233,6 +233,7 @@ partial class AppCommandLine
         var command = CreateCommand("delete", "Delete an application");
 
         command.Add(Options.ContextOption);
+        command.Add(Options.ForceOption);
 
         command.Add(Options.RequiredAppArgument);
 
@@ -248,8 +249,9 @@ partial class AppCommandLine
                                 LoginContext loginContext = ctx.LoginContext!;
 
                                 string app = parseResult.GetValue(Options.RequiredAppArgument)!;
+                                bool force = parseResult.GetValue(Options.ForceOption);
 
-                                return await handler.ExecuteAsync(loginContext, app, cancellationToken);
+                                return await handler.ExecuteAsync(loginContext, app, force, cancellationToken);
                             })
                             .Build();
 

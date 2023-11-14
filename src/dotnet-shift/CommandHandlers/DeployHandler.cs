@@ -38,6 +38,7 @@ sealed partial class DeployHandler
         public Route? Route { get; init; }
         public Service? Service { get; init; }
         public ImageStream? S2iImageStream { get; init; }
+        public required Dictionary<string, PersistentVolumeClaim> PersistentVolumeClaims { get; init; }
     }
 
     public async Task<int> ExecuteAsync(LoginContext login, string project, string? name, string? partOf, bool expose, bool follow, bool startBuild, CancellationToken cancellationToken)
@@ -82,7 +83,9 @@ sealed partial class DeployHandler
         // Get the currently deployed resources.
         Console.WriteLine(); // section "resources"
         Console.WriteLine($"Retrieving existing resources...");
-        ComponentResources resources = await GetDeployedResources(client, name, binaryBuildConfigName, runtime, cancellationToken);
+        List<string> storageNames = projectInfo.VolumeClaims.Select(claim => claim.Name).ToList();
+        ComponentResources resources = await GetDeployedResources(client,
+            name, binaryBuildConfigName, storageNames, runtime, cancellationToken);
 
         // If partOf was not set, default to the application of existing resources,
         // or the name of the deployment.
@@ -102,13 +105,13 @@ sealed partial class DeployHandler
             }
             return CommandResult.Failure;
         }
-    
+
         Console.WriteLine("Updating resources...");
         resources = await UpdateResourcesAsync(client, resources, name, binaryBuildConfigName,
                                     runtime, runtimeVersion,
                                     gitUri: gitInfo?.RemoteUrl, gitRef: gitInfo?.RemoteBranch,
                                     partOf, expose, projectInfo.ContainerPorts, projectInfo.ExposedPort,
-                                    projectInfo.ContainerLimits, cancellationToken);
+                                    projectInfo.VolumeClaims, projectInfo.ContainerLimits, cancellationToken);
 
         if (startBuild)
         {
@@ -210,7 +213,9 @@ sealed partial class DeployHandler
         return true;
     }
 
-    private async Task<ComponentResources> GetDeployedResources(IOpenShiftClient client, string name, string? binaryBuildConfigName, string? runtime, CancellationToken cancellationToken)
+    private async Task<ComponentResources> GetDeployedResources(IOpenShiftClient client,
+        string name, string? binaryBuildConfigName, List<string> storageNames,
+        string? runtime, CancellationToken cancellationToken)
     {
         Deployment? deployment = await client.GetDeploymentAsync(name, cancellationToken);
         BuildConfig? binaryBuildConfig = binaryBuildConfigName is null ? null : await client.GetBuildConfigAsync(binaryBuildConfigName, cancellationToken);
@@ -219,6 +224,16 @@ sealed partial class DeployHandler
         Route? route = await client.GetRouteAsync(name, cancellationToken);
         Service? service = await client.GetServiceAsync(name, cancellationToken);
         ImageStream? s2iImageStream = runtime is null ? null : await client.GetImageStreamAsync(GetS2iImageStreamName(runtime), cancellationToken);
+        Dictionary<string, PersistentVolumeClaim> pvcs = new();
+        foreach (var storageName in storageNames)
+        {
+            string pvcName = GetPersistentVolumeClaimName(name, storageName);
+            PersistentVolumeClaim? claim = await client.GetPersistentVolumeClaimAsync(pvcName, cancellationToken);
+            if (claim is not null)
+            {
+                pvcs.Add(storageName, claim);
+            }
+        }
 
         return new ComponentResources()
         {
@@ -228,9 +243,13 @@ sealed partial class DeployHandler
             ImageStream = imageStream,
             Route = route,
             Service = service,
-            S2iImageStream = s2iImageStream
+            S2iImageStream = s2iImageStream,
+            PersistentVolumeClaims = pvcs,
         };
     }
+
+    private static string GetPersistentVolumeClaimName(string name, string storageName)
+        => $"{name}-{storageName}";
 
     private static string GetS2iImageStreamName(string runtime) => runtime;
 
@@ -585,6 +604,7 @@ sealed partial class DeployHandler
                                             string? gitUri, string? gitRef,
                                             string partOf, bool expose,
                                             global::ContainerPort[] ports, global::ContainerPort? exposedPort,
+                                            PersistentStorage[] claims,
                                             ContainerResources containerResources,
                                             CancellationToken cancellationToken)
     {
@@ -612,6 +632,7 @@ sealed partial class DeployHandler
                                         appImageStreamTagName,
                                         gitUri, gitRef,
                                         ports,
+                                        claims,
                                         Merge(componentLabels, runtimeLabels),
                                         selectorLabels,
                                         containerResources,
@@ -660,6 +681,20 @@ sealed partial class DeployHandler
                               selectorLabels,
                               cancellationToken);
 
+        Dictionary<string, PersistentVolumeClaim> pvcs = new();
+        foreach (var storage in claims)
+        {
+            string pvcName = GetPersistentVolumeClaimName(name, storage.Name);
+            current.PersistentVolumeClaims.TryGetValue(storage.Name, out PersistentVolumeClaim? pvc);
+            pvc = await ApplyPersistentVolumeClaim(client,
+                        pvcName,
+                        pvc,
+                        storage,
+                        componentLabels,
+                        cancellationToken);
+            pvcs.Add(storage.Name, pvc);
+        }
+
         return new ComponentResources()
         {
             Deployment = deployment,
@@ -668,7 +703,8 @@ sealed partial class DeployHandler
             ImageStream = imageStream,
             Route = route,
             Service = service,
-            S2iImageStream = s2iImageStream
+            S2iImageStream = s2iImageStream,
+            PersistentVolumeClaims = pvcs
         };
     }
 

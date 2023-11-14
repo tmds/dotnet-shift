@@ -69,6 +69,12 @@ sealed class MockOpenShiftClient : IOpenShiftClient
         return Task.CompletedTask;
     }
 
+    public Task DeletePersistentVolumeClaimAsync(string name, CancellationToken cancellationToken)
+    {
+        _server.Delete<PersistentVolumeClaim>(name);
+        return Task.CompletedTask;
+    }
+
     public Task<Build?> GetBuildAsync(string name, CancellationToken cancellationToken)
         => Task.FromResult(_server.Get<Build>(name));
 
@@ -92,6 +98,12 @@ sealed class MockOpenShiftClient : IOpenShiftClient
 
     public Task<Service?> GetServiceAsync(string name, CancellationToken cancellationToken)
         => Task.FromResult(_server.Get<Service>(name));
+
+    public Task<PersistentVolumeClaim?> GetPersistentVolumeClaimAsync(string name, CancellationToken cancellationToken)
+        => Task.FromResult(_server.Get<PersistentVolumeClaim>(name));
+
+    public Task<PersistentVolumeClaim> CreatePersistentVolumeClaimAsync(PersistentVolumeClaim pvc, CancellationToken cancellationToken)
+        => Task.FromResult(_server.Create(pvc.Metadata.Name, pvc));
 
     public Task<BuildConfigList> ListBuildConfigsAsync(string labelSelector, CancellationToken cancellationToken)
         => Task.FromResult(new BuildConfigList() { Items = _server.List<BuildConfig>(labelSelector) });
@@ -120,6 +132,9 @@ sealed class MockOpenShiftClient : IOpenShiftClient
     public Task<ServiceList> ListServicesAsync(string? labelSelector, CancellationToken cancellationToken)
         => Task.FromResult(new ServiceList() { Items = _server.List<Service>(labelSelector) });
 
+    public Task<PersistentVolumeClaimList> ListPersistentVolumeClaimsAsync(string? labelSelector, CancellationToken cancellationToken)
+        => Task.FromResult(new PersistentVolumeClaimList() { Items = _server.List<PersistentVolumeClaim>(labelSelector) });
+
     public Task<BuildConfig> PatchBuildConfigAsync(BuildConfig buildConfig, CancellationToken cancellationToken)
         => Task.FromResult(_server.Patch(buildConfig.Metadata.Name, buildConfig));
 
@@ -137,6 +152,9 @@ sealed class MockOpenShiftClient : IOpenShiftClient
 
     public Task<Service> PatchServiceAsync(Service service, CancellationToken cancellationToken)
         => Task.FromResult(_server.Patch(service.Metadata.Name, service));
+
+    public Task<PersistentVolumeClaim> PatchPersistentVolumeClaimAsync(PersistentVolumeClaim value, CancellationToken cancellationToken)
+        => Task.FromResult(_server.Replace(value.Metadata.Name, value));
 
     public Task<Deployment> ReplaceDeploymentAsync(Deployment value, CancellationToken cancellationToken)
         => Task.FromResult(_server.Replace(value.Metadata.Name, value));

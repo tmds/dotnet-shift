@@ -71,6 +71,13 @@ sealed partial class AppCommandLine
                 Arity = ArgumentArity.Zero
             };
 
+        public static readonly CliOption<bool> ForceOption =
+            new CliOption<bool>("--force", "-f")
+            {
+                Description = "Ignore conditions that warrant aborting the operation",
+                Arity = ArgumentArity.Zero
+            };
+
         public static readonly CliOption<bool> NoFollowOption =
             new CliOption<bool>("--no-follow")
             {
