@@ -80,6 +80,9 @@
           app: mycomponent
         }
       },
+      Strategy: {
+        Type: RollingUpdate
+      },
       Template: {
         Metadata: {
           Labels: {

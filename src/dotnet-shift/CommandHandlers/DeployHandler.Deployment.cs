@@ -16,6 +16,7 @@ sealed partial class DeployHandler
         string imageStreamTagName,
         string? gitUri, string? gitRef,
         global::ContainerPort[] ports,
+        PersistentStorage[] claims,
         Dictionary<string, string> labels,
         Dictionary<string, string> selectorLabels,
         ContainerResources containerLimits,
@@ -26,6 +27,7 @@ sealed partial class DeployHandler
             imageStreamTagName,
             gitUri, gitRef,
             ports,
+            claims,
             labels,
             selectorLabels,
             containerLimits);
@@ -57,11 +59,18 @@ sealed partial class DeployHandler
         string imageStreamTagName,
         string? gitUri, string? gitRef,
         global::ContainerPort[] ports,
+        PersistentStorage[] claims,
         Dictionary<string, string> labels,
         Dictionary<string, string> selectorLabels,
         ContainerResources containerLimits)
     {
+        const string ConfigVolumeName = "config-volume";
+
         Dictionary<string, string> annotations = GetAppDeploymentAnnotations(imageStreamTagName, gitUri, gitRef);
+
+        // If only a single mount is allowed, the previous pod must be down, so the new pod can attach.
+        bool hasReadWriteOnceVolumes = claims.Any(c => c.Access == "ReadWriteOnce" || c.Access == "ReadWriteOncePod");
+        DeploymentStrategy2Type deploymentStrategy = hasReadWriteOnceVolumes ? DeploymentStrategy2Type.Recreate : DeploymentStrategy2Type.RollingUpdate;
 
         return new Deployment()
         {
@@ -75,6 +84,10 @@ sealed partial class DeployHandler
             },
             Spec = new()
             {
+                Strategy = new()
+                {
+                    Type = deploymentStrategy
+                },
                 Replicas = null, // Defaults to '1'.
                 Selector = new()
                 {
@@ -88,18 +101,7 @@ sealed partial class DeployHandler
                     },
                     Spec = new()
                     {
-                        Volumes = new()
-                        {
-                            // Volume for application configuration.
-                            new()
-                            {
-                                Name = "config-volume",
-                                ConfigMap = new()
-                                {
-                                    Name = name
-                                }
-                            }
-                        },
+                        Volumes = CreateVolumes(name, claims),
                         Containers = new()
                         {
                             new()
@@ -107,14 +109,7 @@ sealed partial class DeployHandler
                                 Name = ContainerName,
                                 Image = imageStreamTagName,
                                 Ports = CreateContainerPorts(ports),
-                                VolumeMounts = new()
-                                {
-                                    new()
-                                    {
-                                        Name = "config-volume",
-                                        MountPath = AppConfigMountPath
-                                    }
-                                },
+                                VolumeMounts = CreateVolumeMounts(claims),
                                 Resources = CreateResourceRequirements(containerLimits)
                             }
                         }
@@ -156,6 +151,58 @@ sealed partial class DeployHandler
                 }
             }
             return requirements;
+        }
+
+        static List<Volume> CreateVolumes(string name, PersistentStorage[] claims)
+        {
+            List<Volume> volumes = new()
+            {
+                new()
+                {
+                    Name = ConfigVolumeName,
+                    ConfigMap = new()
+                    {
+                        Name = name
+                    }
+                }
+            };
+
+            foreach (var claim in claims)
+            {
+                volumes.Add(new()
+                {
+                    Name = claim.Name,
+                    PersistentVolumeClaim = new()
+                    {
+                        ClaimName = GetPersistentVolumeClaimName(name, claim.Name)
+                    }
+                });
+            }
+
+            return volumes;
+        }
+
+        static List<VolumeMount> CreateVolumeMounts(PersistentStorage[] claims)
+        {
+            List<VolumeMount> mounts = new()
+            {
+                new()
+                {
+                    Name = ConfigVolumeName,
+                    MountPath = AppConfigMountPath
+                }
+            };
+
+            foreach (var claim in claims)
+            {
+                mounts.Add(new()
+                {
+                    Name = claim.Name,
+                    MountPath = claim.Path
+                });
+            }
+
+            return mounts;
         }
     }
 

@@ -17,6 +17,8 @@ sealed record ProjectInformation
         ExposedPort = ContainerPorts[0];
 
         ContainerEnvironmentVariables = new();
+
+        VolumeClaims = new PersistentStorage[] { };
     }
 
     public required string DotnetVersion { get; init; }
@@ -25,4 +27,5 @@ sealed record ProjectInformation
     public ContainerResources ContainerLimits { get; init; } = new();
     public ContainerPort[] ContainerPorts { get; init; }
     public ContainerPort? ExposedPort { get; init; }
+    public PersistentStorage[] VolumeClaims { get; init; }
 }

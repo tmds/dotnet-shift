@@ -1,5 +1,6 @@
 namespace CommandHandlers;
 
+using System;
 using Newtonsoft.Json;
 using OpenShift;
 
@@ -41,6 +42,9 @@ sealed partial class ListHandler
         RouteList routes = await client.ListRoutesAsync(null, cancellationToken);
         AddRoutesToItems(items, routes);
 
+        PersistentVolumeClaimList pvcs = await client.ListPersistentVolumeClaimsAsync($"{ResourceLabels.PartOf}", cancellationToken);
+        AddPvcsToItems(items, pvcs, out List<PersistentVolumeClaim> unusedPvcs);
+
         await AddPodsToItemsAsync(client, items, cancellationToken);
 
         List<BuildConfig> unusedBuildConfigs = GetUnusedBuildConfigs(items, buildConfigs);
@@ -53,7 +57,38 @@ sealed partial class ListHandler
             });
         }
 
+        foreach (var pvc in unusedPvcs)
+        {
+            items.Add(new Item()
+            {
+                App = pvc.Metadata.Labels[ResourceLabels.PartOf],
+                Pvcs = { pvc }
+            });
+        }
+
         return items;
+    }
+
+    private void AddPvcsToItems(List<Item> items, PersistentVolumeClaimList pvcs, out List<PersistentVolumeClaim> unusedPvcs)
+    {
+        unusedPvcs = new(pvcs.Items);
+        foreach (var pvc in pvcs.Items)
+        {
+            foreach (var item in items)
+            {
+                bool deploymentUsesPvc =
+                    (item.Deployment is not null && item.Deployment.Spec.Template.Spec.Volumes.Any(v => v.PersistentVolumeClaim?.ClaimName == pvc.Metadata.Name)) ||
+                    (item.DeploymentConfig is not null && item.DeploymentConfig.Spec.Template.Spec.Volumes.Any(v => v.PersistentVolumeClaim?.ClaimName == pvc.Metadata.Name));
+                if (deploymentUsesPvc)
+                {
+                    item.Pvcs.Add(pvc);
+                    if (pvc.Metadata.Labels.TryGetValue(ResourceLabels.PartOf, out string? partOf) && partOf == item.App)
+                    {
+                        unusedPvcs.Remove(pvc);
+                    }
+                }
+            }
+        }
     }
 
     private static List<BuildConfig> GetUnusedBuildConfigs(List<Item> items, Dictionary<(string type, string name), List<BuildConfig>> buildConfigs)
@@ -93,10 +128,12 @@ sealed partial class ListHandler
         grid.AddColumn();
         grid.AddColumn();
         grid.AddColumn();
+        grid.AddColumn();
         grid.AddRow(new[]{
             "APP",
             "DEPLOYMENT",
             "BUILD",
+            "PVC",
             "SERVICE",
             "ROUTE",
             "POD",
@@ -108,6 +145,7 @@ sealed partial class ListHandler
                 item.App is null ? "(none)" : item.App == previousApp ? "" : item.App,
                 FormatDeployment(item),
                 string.Join("\n", item.BuildConfigs.Select(FormatBuild)),
+                string.Join("\n", item.Pvcs.Select(FormatPvc)),
                 string.Join("\n", item.Services.Select(FormatService)),
                 string.Join("\n", item.Routes.Select(FormatRoute)),
                 string.Join("\n", item.Pods.Select(FormatPod)),
@@ -145,6 +183,9 @@ sealed partial class ListHandler
 
         static string FormatService(Service service)
             => service.GetName();
+
+        static string FormatPvc(PersistentVolumeClaim pvc)
+            => pvc.GetName();
 
         static string FormatRoute(Route route)
             => !System.Console.IsOutputRedirected ? $"[link={route.GetRouteUrl()}]{route.Metadata.Name}[/]"
@@ -388,5 +429,6 @@ sealed partial class ListHandler
         public List<Service> Services { get; } = new();
         public List<Route> Routes { get; } = new();
         public List<Pod> Pods { get; } = new();
+        public List<PersistentVolumeClaim> Pvcs { get; } = new();
     }
 }

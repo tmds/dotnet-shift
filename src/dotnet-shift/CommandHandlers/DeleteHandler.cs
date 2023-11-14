@@ -15,12 +15,19 @@ sealed partial class DeleteHandler
         OpenShiftClientFactory = clientFactory;
     }
 
-    public async Task<int> ExecuteAsync(LoginContext login, string app, CancellationToken cancellationToken)
+    public async Task<int> ExecuteAsync(LoginContext login, string app, bool force, CancellationToken cancellationToken)
     {
         using IOpenShiftClient client = OpenShiftClientFactory.CreateClient(login);
 
         string selector = $"{ResourceLabels.PartOf}={app}";
         List<Resource> resources = await FindResourcesAsync(client, selector, cancellationToken);
+
+        bool includesPvcs = resources.Any(r => r.Type == ResourceType.PersistentVolumeClaim);
+        if (includesPvcs && !force)
+        {
+            Console.WriteErrorLine($"The app contains persistent volume claims. To remove it, you must use the '--force' flag.");
+            return CommandResult.Failure;
+        }
 
         resources.Sort(DeleteOrder);
 
@@ -57,6 +64,9 @@ sealed partial class DeleteHandler
                     break;
                 case ResourceType.BuildConfig:
                     await client.DeleteBuildConfigAsync(resource.Name, cancellationToken);
+                    break;
+                case ResourceType.PersistentVolumeClaim:
+                    await client.DeletePersistentVolumeClaimAsync(resource.Name, cancellationToken);
                     break;
                 default:
                     throw new NotImplementedException($"{resource.Type} can not be deleted.");
@@ -117,6 +127,13 @@ sealed partial class DeleteHandler
             r => r.Metadata.Labels,
             cancellationToken);
 
+        await AppendResourcesAsync<PersistentVolumeClaim>(resources, selector, client,
+            ResourceType.PersistentVolumeClaim,
+            async (c, s, ct) => (await c.ListPersistentVolumeClaimsAsync(s, ct)).Items,
+            r => r.GetName(),
+            r => r.Metadata.Labels,
+            cancellationToken);
+
         return resources;
     }
 
@@ -145,7 +162,8 @@ sealed partial class DeleteHandler
         Service,
         DeploymentConfig,
         Deployment,
-        BuildConfig
+        BuildConfig,
+        PersistentVolumeClaim
     }
 
     private async Task AppendResourcesAsync<TResource>(

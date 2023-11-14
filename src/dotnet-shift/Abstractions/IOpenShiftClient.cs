@@ -50,4 +50,9 @@ interface IOpenShiftClient : IDisposable
     Task<ImageStream> ReplaceImageStreamAsync(ImageStream value, CancellationToken cancellationToken);
     Task<Route> ReplaceRouteAsync(Route value, CancellationToken cancellationToken);
     Task<Service> ReplaceServiceAsync(Service value, CancellationToken cancellationToken);
+    Task<PersistentVolumeClaim> CreatePersistentVolumeClaimAsync(PersistentVolumeClaim pvc, CancellationToken cancellationToken);
+    Task<PersistentVolumeClaim?> GetPersistentVolumeClaimAsync(string name, CancellationToken cancellationToken);
+    Task<PersistentVolumeClaimList> ListPersistentVolumeClaimsAsync(string? labelSelector, CancellationToken cancellationToken);
+    Task DeletePersistentVolumeClaimAsync(string name, CancellationToken cancellationToken);
+    Task<PersistentVolumeClaim> PatchPersistentVolumeClaimAsync(PersistentVolumeClaim pvc, CancellationToken cancellationToken);
 }

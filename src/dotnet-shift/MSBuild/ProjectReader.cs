@@ -10,6 +10,7 @@ sealed class ProjectReader : IProjectReader
     // We don't use ASPNETCORE_HTTP_PORTS and ASPNETCORE_HTTPS_PORTS by design.
     // ASPNETCORE_URLS takes precedence over these and allows to configure all ports with a single setting.
     private const string ASPNETCORE_URLS = nameof(ASPNETCORE_URLS);
+    private static string[] ValidAccesModes = new[] { "ReadWriteOnce", "ReadOnlyMany", "ReadWriteMany", "ReadWriteOncePod" };
 
     public bool TryReadProjectInfo(string path, [NotNullWhen(true)] out ProjectInformation? projectInformation, out List<string> validationErrors)
     {
@@ -25,6 +26,7 @@ sealed class ProjectReader : IProjectReader
 
         ContainerResources containerLimits = ReadContainerLimits(validationErrors, project);
         ContainerPort[] containerPorts = ReadContainerPorts(project, environmentVariables, validationErrors);
+        PersistentStorage[] volumeClaims = ReadVolumeClaims(project, validationErrors);
 
         if (validationErrors.Count > 0)
         {
@@ -43,13 +45,90 @@ sealed class ProjectReader : IProjectReader
             ContainerEnvironmentVariables = environmentVariables,
             ContainerLimits = containerLimits,
             ContainerPorts = containerPorts,
-            ExposedPort = exposedPort
+            ExposedPort = exposedPort,
+            VolumeClaims = volumeClaims
         };
 
         project.ProjectCollection.UnloadProject(project);
 
         return true;
     }
+
+    private PersistentStorage[] ReadVolumeClaims(Project project, List<string> validationErrors)
+    {
+        List<PersistentStorage> claims = new();
+        ProjectItem[] items = GetItems(project, "ContainerPersistentStorage");
+        Debug.Assert(items.Length > 0);
+        HashSet<string> names = new();
+        foreach (var item in items)
+        {
+            string name = item.EvaluatedInclude;
+            if (!names.Add(name))
+            {
+                validationErrors.Add("ContainerPersistentStorage Name is not unique.");
+            }
+            string? size =  GetMetadata(item, "Size");
+            ResourceQuantity? sizeQuantity = null;
+            if (size is null)
+            {
+                validationErrors.Add("ContainerPersistentStorage must have a Size.");
+            }
+            else if (!ResourceQuantity.TryParse(size, out sizeQuantity))
+            {
+                validationErrors.Add($"ContainerPersistentStorage Size '{size}' is not a valid quantity.");
+            }
+            string? path =  GetMetadata(item, "Path");
+            if (path is null)
+            {
+                validationErrors.Add("ContainerPersistentStorage must have a Path.");
+            }
+            else if (!path.StartsWith("/", StringComparison.InvariantCulture))
+            {
+                validationErrors.Add("ContainerPersistentStorage Path is not an absolute path.");
+            }
+            ResourceQuantity? limitQuantity = null;
+            string? limit =  GetMetadata(item, "Limit");
+            if (limit is { Length: 0})
+            {
+                limit = null;
+            }
+            if (limit is not null && !ResourceQuantity.TryParse(limit, out limitQuantity))
+            {
+                validationErrors.Add($"ContainerPersistentStorage Limit '{limit}' is not a valid quantity.");
+            }
+            string? storageClass =  GetMetadata(item, "StorageClass");
+            if (storageClass is { Length: 0})
+            {
+                storageClass = null;
+            }
+            string? access =  GetMetadata(item, "Access");
+            if (string.IsNullOrEmpty(access))
+            {
+                access = "ReadWriteOnce";
+            }
+            if (!IsValidAccessMode(access))
+            {
+                validationErrors.Add($"ContainerPersistentStorage Access '{access}' is not a valid access mode.");
+            }
+            if (sizeQuantity is not null &&
+                path is not null)
+            {
+                claims.Add(new PersistentStorage()
+                {
+                    Name = name,
+                    Size = sizeQuantity,
+                    Path = path,
+                    Limit = limitQuantity,
+                    StorageClass = storageClass,
+                    Access = access
+                });
+            }
+        }
+        return claims.ToArray();
+    }
+
+    private bool IsValidAccessMode(string mode)
+        => Array.IndexOf(ValidAccesModes, mode) != -1;
 
     private static bool IsAspNet(Project project)
     {
