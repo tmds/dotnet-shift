@@ -33,7 +33,7 @@ sealed partial class DeployHandler
     {
         public Deployment? Deployment { get; init; }
         public BuildConfig? BinaryBuildConfig { get; init; }
-        public ConfigMap? ConfigMap { get; init; }
+        public required Dictionary<string, ConfigMap> ConfigMaps { get; init; }
         public ImageStream? ImageStream { get; init; }
         public Route? Route { get; init; }
         public Service? Service { get; init; }
@@ -83,9 +83,10 @@ sealed partial class DeployHandler
         // Get the currently deployed resources.
         Console.WriteLine(); // section "resources"
         Console.WriteLine($"Retrieving existing resources...");
-        List<string> storageNames = projectInfo.VolumeClaims.Select(claim => claim.Name).ToList();
+        List<string> storageNames = projectInfo.VolumeClaims.Select(claim => GetResourceNameFor(name, claim)).ToList();
+        List<string> mapNames = projectInfo.ConfigMaps.Select(map => GetResourceNameFor(name, map)).ToList();
         ComponentResources resources = await GetDeployedResources(client,
-            name, binaryBuildConfigName, storageNames, runtime, cancellationToken);
+            name, binaryBuildConfigName, storageNames, mapNames, runtime, cancellationToken);
 
         // If partOf was not set, default to the application of existing resources,
         // or the name of the deployment.
@@ -111,7 +112,8 @@ sealed partial class DeployHandler
                                     runtime, runtimeVersion,
                                     gitUri: gitInfo?.RemoteUrl, gitRef: gitInfo?.RemoteBranch,
                                     partOf, expose, projectInfo.ContainerPorts, projectInfo.ExposedPort,
-                                    projectInfo.VolumeClaims, projectInfo.ContainerLimits, cancellationToken);
+                                    projectInfo.VolumeClaims, projectInfo.ConfigMaps,
+                                    projectInfo.ContainerLimits, cancellationToken);
 
         if (startBuild)
         {
@@ -214,7 +216,7 @@ sealed partial class DeployHandler
     }
 
     private async Task<ComponentResources> GetDeployedResources(IOpenShiftClient client,
-        string name, string? binaryBuildConfigName, List<string> storageNames,
+        string name, string? binaryBuildConfigName, List<string> pvcNames, List<string> configMapNames,
         string? runtime, CancellationToken cancellationToken)
     {
         Deployment? deployment = await client.GetDeploymentAsync(name, cancellationToken);
@@ -225,13 +227,21 @@ sealed partial class DeployHandler
         Service? service = await client.GetServiceAsync(name, cancellationToken);
         ImageStream? s2iImageStream = runtime is null ? null : await client.GetImageStreamAsync(GetS2iImageStreamName(runtime), cancellationToken);
         Dictionary<string, PersistentVolumeClaim> pvcs = new();
-        foreach (var storageName in storageNames)
+        foreach (var pvcName in pvcNames)
         {
-            string pvcName = GetPersistentVolumeClaimName(name, storageName);
             PersistentVolumeClaim? claim = await client.GetPersistentVolumeClaimAsync(pvcName, cancellationToken);
             if (claim is not null)
             {
-                pvcs.Add(storageName, claim);
+                pvcs.Add(pvcName, claim);
+            }
+        }
+        Dictionary<string, ConfigMap> maps = new();
+        foreach (var mapName in configMapNames)
+        {
+            ConfigMap? map = await client.GetConfigMapAsync(mapName, cancellationToken);
+            if (map is not null)
+            {
+                maps.Add(mapName, map);
             }
         }
 
@@ -239,7 +249,7 @@ sealed partial class DeployHandler
         {
             Deployment = deployment,
             BinaryBuildConfig = binaryBuildConfig,
-            ConfigMap = configMap,
+            ConfigMaps = maps,
             ImageStream = imageStream,
             Route = route,
             Service = service,
@@ -248,8 +258,11 @@ sealed partial class DeployHandler
         };
     }
 
-    private static string GetPersistentVolumeClaimName(string name, string storageName)
-        => $"{name}-{storageName}";
+    private static string GetResourceNameFor(string componentName, PersistentStorage storage)
+        => $"{componentName}-{storage.Name}";
+
+    private static string GetResourceNameFor(string componentName, ConfMap confMap)
+        => $"{componentName}-{confMap.Name}";
 
     private static string GetS2iImageStreamName(string runtime) => runtime;
 
@@ -605,6 +618,7 @@ sealed partial class DeployHandler
                                             string partOf, bool expose,
                                             global::ContainerPort[] ports, global::ContainerPort? exposedPort,
                                             PersistentStorage[] claims,
+                                            ConfMap[] configMaps,
                                             ContainerResources containerResources,
                                             CancellationToken cancellationToken)
     {
@@ -625,6 +639,35 @@ sealed partial class DeployHandler
                                             Merge(componentLabels, runtimeLabels),
                                             cancellationToken);
 
+        Dictionary<string, PersistentVolumeClaim> pvcs = new();
+        foreach (var storage in claims)
+        {
+            string pvcName = GetResourceNameFor(name, storage);
+            current.PersistentVolumeClaims.TryGetValue(pvcName, out PersistentVolumeClaim? pvc);
+            pvc = await ApplyPersistentVolumeClaim(client,
+                        pvcName,
+                        pvc,
+                        storage,
+                        componentLabels,
+                        cancellationToken);
+            pvcs.Add(pvcName, pvc);
+        }
+
+        Dictionary<string, ConfigMap> maps = new();
+        foreach (var map in configMaps)
+        {
+            string mapName = GetResourceNameFor(name, map);
+            current.ConfigMaps.TryGetValue(mapName, out ConfigMap? configMap);
+            configMap = await ApplyConfigMap(
+                    client,
+                    mapName,
+                    configMap,
+                    map,
+                    componentLabels,
+                    cancellationToken);
+            maps.Add(mapName, configMap);
+        }
+
         Deployment? deployment = await ApplyAppDeployment(
                                         client,
                                         name,
@@ -633,19 +676,12 @@ sealed partial class DeployHandler
                                         gitUri, gitRef,
                                         ports,
                                         claims,
+                                        configMaps,
                                         Merge(componentLabels, runtimeLabels),
                                         selectorLabels,
                                         containerResources,
                                         cancellationToken
                                     );
-
-        ConfigMap? configMap = await ApplyAppConfigMap(
-                                    client,
-                                    name,
-                                    current.ConfigMap,
-                                    runtime,
-                                    componentLabels,
-                                    cancellationToken);
 
         Debug.Assert(runtime == ResourceLabelValues.DotnetRuntime);
         ImageStream? s2iImageStream = await ApplyDotnetImageStreamTag(
@@ -681,25 +717,11 @@ sealed partial class DeployHandler
                               selectorLabels,
                               cancellationToken);
 
-        Dictionary<string, PersistentVolumeClaim> pvcs = new();
-        foreach (var storage in claims)
-        {
-            string pvcName = GetPersistentVolumeClaimName(name, storage.Name);
-            current.PersistentVolumeClaims.TryGetValue(storage.Name, out PersistentVolumeClaim? pvc);
-            pvc = await ApplyPersistentVolumeClaim(client,
-                        pvcName,
-                        pvc,
-                        storage,
-                        componentLabels,
-                        cancellationToken);
-            pvcs.Add(storage.Name, pvc);
-        }
-
         return new ComponentResources()
         {
             Deployment = deployment,
             BinaryBuildConfig = binaryBuildConfig,
-            ConfigMap = configMap,
+            ConfigMaps = maps,
             ImageStream = imageStream,
             Route = route,
             Service = service,

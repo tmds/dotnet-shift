@@ -27,6 +27,7 @@ sealed class ProjectReader : IProjectReader
         ContainerResources containerLimits = ReadContainerLimits(validationErrors, project);
         ContainerPort[] containerPorts = ReadContainerPorts(project, environmentVariables, validationErrors);
         PersistentStorage[] volumeClaims = ReadVolumeClaims(project, validationErrors);
+        ConfMap[] configMaps = ReadConfigMaps(project, validationErrors);
 
         if (validationErrors.Count > 0)
         {
@@ -46,7 +47,8 @@ sealed class ProjectReader : IProjectReader
             ContainerLimits = containerLimits,
             ContainerPorts = containerPorts,
             ExposedPort = exposedPort,
-            VolumeClaims = volumeClaims
+            VolumeClaims = volumeClaims,
+            ConfigMaps = configMaps
         };
 
         project.ProjectCollection.UnloadProject(project);
@@ -54,11 +56,48 @@ sealed class ProjectReader : IProjectReader
         return true;
     }
 
+    private ConfMap[] ReadConfigMaps(Project project, List<string> validationErrors)
+    {
+        List<ConfMap> maps = new();
+        ProjectItem[] items = GetItems(project, "ContainerConfigMap");
+        HashSet<string> names = new();
+        foreach (var item in items)
+        {
+            string name = item.EvaluatedInclude;
+            if (!names.Add(name))
+            {
+                validationErrors.Add("ContainerConfigMap Name is not unique.");
+            }
+            string? path =  GetMetadata(item, "Path");
+            if (path is null)
+            {
+                validationErrors.Add("ContainerConfigMap must have a Path.");
+            }
+            else if (!path.StartsWith("/", StringComparison.InvariantCulture))
+            {
+                validationErrors.Add("ContainerConfigMap Path is not an absolute path.");
+            }
+            if (!TryGetMetadataAsBool(item, "ReadOnly", out bool? mountReadOnly))
+            {
+                validationErrors.Add($"ContainerConfigMap ReadOnly must be 'true' or 'false'.");
+            }
+            if (path is not null)
+            {
+                maps.Add(new ConfMap()
+                {
+                    Name = name,
+                    Path = path,
+                    MountReadOnly = mountReadOnly ?? true
+                });
+            }
+        }
+        return maps.ToArray();
+    }
+
     private PersistentStorage[] ReadVolumeClaims(Project project, List<string> validationErrors)
     {
         List<PersistentStorage> claims = new();
         ProjectItem[] items = GetItems(project, "ContainerPersistentStorage");
-        Debug.Assert(items.Length > 0);
         HashSet<string> names = new();
         foreach (var item in items)
         {
@@ -148,6 +187,31 @@ sealed class ProjectReader : IProjectReader
     private static string? GetMetadata(ProjectItem item, string name)
     {
         return item.DirectMetadata.FirstOrDefault(m => m.Name == name)?.EvaluatedValue;
+    }
+
+    private static bool TryGetMetadataAsBool(ProjectItem item, string name, out bool? value)
+    {
+        string? s = GetMetadata(item, name);
+        if (string.IsNullOrEmpty(s))
+        {
+            value = null;
+            return true;
+        }
+        if (s == "true")
+        {
+            value = true;
+            return true;
+        }
+        else if (s == "false")
+        {
+            value = false;
+            return true;
+        }
+        else
+        {
+            value = null;
+            return false;
+        }
     }
 
     private static T? TryGetDictionaryValue<T>(Dictionary<string, T> dictionary, string key)
@@ -249,25 +313,13 @@ sealed class ProjectReader : IProjectReader
             {
                 validationErrors.Add($"ContainerPort Type must be 'tcp' or 'udp'.");
             }
-            bool? isServicePort = null;
-            switch (GetMetadata(portItem, "IsServicePort"))
+            if (!TryGetMetadataAsBool(portItem, "IsServicePort", out bool? isServicePort))
             {
-                case null:
-                    isServicePort = null;
-                    break;
-                case "true":
-                    isServicePort = true;
-                    break;
-                case "false":
-                    isServicePort = false;
-                    break;
-                default:
-                    validationErrors.Add($"IsServicePort must be 'true' or 'false'.");
-                    break;
+                validationErrors.Add($"ContainerPort IsServicePort must be 'true' or 'false'.");
             }
             if (!int.TryParse(portItem.EvaluatedInclude, out int portNumber))
             {
-                validationErrors.Add($"Invalid port number '{portItem.EvaluatedInclude}'");
+                validationErrors.Add($"ContainerPort Invalid port number '{portItem.EvaluatedInclude}'");
                 portNumber = -1;
             }
             if (isServicePort == true && name is null)

@@ -6,4 +6,5 @@ record class PersistentStorage
     public required ResourceQuantity? Limit { get; init; }
     public required string? StorageClass { get; init; }
     public required string Access { get; init; }
+    public bool MountReadOnly { get; } = false;
 }

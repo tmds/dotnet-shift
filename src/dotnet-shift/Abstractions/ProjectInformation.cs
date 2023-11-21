@@ -19,6 +19,8 @@ sealed record ProjectInformation
         ContainerEnvironmentVariables = new();
 
         VolumeClaims = new PersistentStorage[] { };
+
+        ConfigMaps = new ConfMap[] { };
     }
 
     public required string DotnetVersion { get; init; }
@@ -28,4 +30,5 @@ sealed record ProjectInformation
     public ContainerPort[] ContainerPorts { get; init; }
     public ContainerPort? ExposedPort { get; init; }
     public PersistentStorage[] VolumeClaims { get; init; }
+    public ConfMap[] ConfigMaps { get; init; }
 }

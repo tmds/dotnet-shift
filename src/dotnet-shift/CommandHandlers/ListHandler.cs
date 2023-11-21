@@ -45,6 +45,9 @@ sealed partial class ListHandler
         PersistentVolumeClaimList pvcs = await client.ListPersistentVolumeClaimsAsync($"{ResourceLabels.PartOf}", cancellationToken);
         AddPvcsToItems(items, pvcs, out List<PersistentVolumeClaim> unusedPvcs);
 
+        ConfigMapList configMaps = await client.ListConfigMapsAsync($"{ResourceLabels.PartOf}", cancellationToken);
+        AddConfigMapsToItems(items, configMaps, out List<ConfigMap> unusedConfigMaps);
+
         await AddPodsToItemsAsync(client, items, cancellationToken);
 
         List<BuildConfig> unusedBuildConfigs = GetUnusedBuildConfigs(items, buildConfigs);
@@ -66,7 +69,38 @@ sealed partial class ListHandler
             });
         }
 
+        foreach (var configMap in unusedConfigMaps)
+        {
+            items.Add(new Item()
+            {
+                App = configMap.Metadata.Labels[ResourceLabels.PartOf],
+                ConfigMaps = { configMap }
+            });
+        }
+
         return items;
+    }
+
+    private void AddConfigMapsToItems(List<Item> items, ConfigMapList configMaps, out List<ConfigMap> unusedConfigMaps)
+    {
+        unusedConfigMaps = new(configMaps.Items);
+        foreach (var configMap in configMaps.Items)
+        {
+            foreach (var item in items)
+            {
+                bool deploymentUsesConfigMap =
+                    (item.Deployment is not null && item.Deployment.Spec.Template.Spec.Volumes?.Any(v => v.ConfigMap?.Name == configMap.Metadata.Name) == true) ||
+                    (item.DeploymentConfig is not null && item.DeploymentConfig.Spec.Template.Spec.Volumes?.Any(v => v.ConfigMap?.Name == configMap.Metadata.Name) == true);
+                if (deploymentUsesConfigMap)
+                {
+                    item.ConfigMaps.Add(configMap);
+                    if (configMap.Metadata.Labels.TryGetValue(ResourceLabels.PartOf, out string? partOf) && partOf == item.App)
+                    {
+                        unusedConfigMaps.Remove(configMap);
+                    }
+                }
+            }
+        }
     }
 
     private void AddPvcsToItems(List<Item> items, PersistentVolumeClaimList pvcs, out List<PersistentVolumeClaim> unusedPvcs)
@@ -77,8 +111,8 @@ sealed partial class ListHandler
             foreach (var item in items)
             {
                 bool deploymentUsesPvc =
-                    (item.Deployment is not null && item.Deployment.Spec.Template.Spec.Volumes.Any(v => v.PersistentVolumeClaim?.ClaimName == pvc.Metadata.Name)) ||
-                    (item.DeploymentConfig is not null && item.DeploymentConfig.Spec.Template.Spec.Volumes.Any(v => v.PersistentVolumeClaim?.ClaimName == pvc.Metadata.Name));
+                    (item.Deployment is not null && item.Deployment.Spec.Template.Spec.Volumes?.Any(v => v.PersistentVolumeClaim?.ClaimName == pvc.Metadata.Name) == true) ||
+                    (item.DeploymentConfig is not null && item.DeploymentConfig.Spec.Template.Spec.Volumes?.Any(v => v.PersistentVolumeClaim?.ClaimName == pvc.Metadata.Name) == true);
                 if (deploymentUsesPvc)
                 {
                     item.Pvcs.Add(pvc);
@@ -129,11 +163,13 @@ sealed partial class ListHandler
         grid.AddColumn();
         grid.AddColumn();
         grid.AddColumn();
+        grid.AddColumn();
         grid.AddRow(new[]{
             "APP",
             "DEPLOYMENT",
             "BUILD",
             "PVC",
+            "CONFIG",
             "SERVICE",
             "ROUTE",
             "POD",
@@ -146,6 +182,7 @@ sealed partial class ListHandler
                 FormatDeployment(item),
                 string.Join("\n", item.BuildConfigs.Select(FormatBuild)),
                 string.Join("\n", item.Pvcs.Select(FormatPvc)),
+                string.Join("\n", item.ConfigMaps.Select(FormatConfigMap)),
                 string.Join("\n", item.Services.Select(FormatService)),
                 string.Join("\n", item.Routes.Select(FormatRoute)),
                 string.Join("\n", item.Pods.Select(FormatPod)),
@@ -186,6 +223,9 @@ sealed partial class ListHandler
 
         static string FormatPvc(PersistentVolumeClaim pvc)
             => pvc.GetName();
+
+        static string FormatConfigMap(ConfigMap configMap)
+            => configMap.GetName();
 
         static string FormatRoute(Route route)
             => !System.Console.IsOutputRedirected ? $"[link={route.GetRouteUrl()}]{route.Metadata.Name}[/]"
@@ -430,5 +470,6 @@ sealed partial class ListHandler
         public List<Route> Routes { get; } = new();
         public List<Pod> Pods { get; } = new();
         public List<PersistentVolumeClaim> Pvcs { get; } = new();
+        public List<ConfigMap> ConfigMaps { get; } = new();
     }
 }
