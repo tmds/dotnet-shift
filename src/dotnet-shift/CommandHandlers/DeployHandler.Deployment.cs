@@ -7,7 +7,6 @@ using OpenShift;
 sealed partial class DeployHandler
 {
     private const string ContainerName = "app";
-    private const string AppConfigMountPath = "/config";
 
     private async Task<Deployment> ApplyAppDeployment(
         IOpenShiftClient client,
@@ -17,6 +16,7 @@ sealed partial class DeployHandler
         string? gitUri, string? gitRef,
         global::ContainerPort[] ports,
         PersistentStorage[] claims,
+        ConfMap[] configMaps,
         Dictionary<string, string> labels,
         Dictionary<string, string> selectorLabels,
         ContainerResources containerLimits,
@@ -28,6 +28,7 @@ sealed partial class DeployHandler
             gitUri, gitRef,
             ports,
             claims,
+            configMaps,
             labels,
             selectorLabels,
             containerLimits);
@@ -60,11 +61,13 @@ sealed partial class DeployHandler
         string? gitUri, string? gitRef,
         global::ContainerPort[] ports,
         PersistentStorage[] claims,
+        ConfMap[] configMaps,
         Dictionary<string, string> labels,
         Dictionary<string, string> selectorLabels,
         ContainerResources containerLimits)
     {
-        const string ConfigVolumeName = "config-volume";
+        const string PvcPrefix = "pvc";
+        const string ConfigMapPrefix = "cfg";
 
         Dictionary<string, string> annotations = GetAppDeploymentAnnotations(imageStreamTagName, gitUri, gitRef);
 
@@ -101,7 +104,7 @@ sealed partial class DeployHandler
                     },
                     Spec = new()
                     {
-                        Volumes = CreateVolumes(name, claims),
+                        Volumes = CreateVolumes(name, claims, configMaps),
                         Containers = new()
                         {
                             new()
@@ -109,7 +112,7 @@ sealed partial class DeployHandler
                                 Name = ContainerName,
                                 Image = imageStreamTagName,
                                 Ports = CreateContainerPorts(ports),
-                                VolumeMounts = CreateVolumeMounts(claims),
+                                VolumeMounts = CreateVolumeMounts(claims, configMaps),
                                 Resources = CreateResourceRequirements(containerLimits)
                             }
                         }
@@ -153,28 +156,30 @@ sealed partial class DeployHandler
             return requirements;
         }
 
-        static List<Volume> CreateVolumes(string name, PersistentStorage[] claims)
+        static List<Volume> CreateVolumes(string name, PersistentStorage[] claims, ConfMap[] configMaps)
         {
-            List<Volume> volumes = new()
+            List<Volume> volumes = new();
+
+            foreach (var map in configMaps)
             {
-                new()
+                volumes.Add(new()
                 {
-                    Name = ConfigVolumeName,
+                    Name = VolumeName(ConfigMapPrefix, map.Name),
                     ConfigMap = new()
                     {
-                        Name = name
+                        Name = GetResourceNameFor(name, map)
                     }
-                }
-            };
+                });
+            }
 
             foreach (var claim in claims)
             {
                 volumes.Add(new()
                 {
-                    Name = claim.Name,
+                    Name = VolumeName(PvcPrefix, claim.Name),
                     PersistentVolumeClaim = new()
                     {
-                        ClaimName = GetPersistentVolumeClaimName(name, claim.Name)
+                        ClaimName = GetResourceNameFor(name, claim)
                     }
                 });
             }
@@ -182,28 +187,34 @@ sealed partial class DeployHandler
             return volumes;
         }
 
-        static List<VolumeMount> CreateVolumeMounts(PersistentStorage[] claims)
+        static List<VolumeMount> CreateVolumeMounts(PersistentStorage[] claims, ConfMap[] configMaps)
         {
-            List<VolumeMount> mounts = new()
+            List<VolumeMount> mounts = new();
+
+            foreach (var map in configMaps)
             {
-                new()
+                mounts.Add(new()
                 {
-                    Name = ConfigVolumeName,
-                    MountPath = AppConfigMountPath
-                }
-            };
+                    Name = VolumeName(ConfigMapPrefix, map.Name),
+                    MountPath = map.Path,
+                    ReadOnly = map.MountReadOnly
+                });
+            }
 
             foreach (var claim in claims)
             {
                 mounts.Add(new()
                 {
-                    Name = claim.Name,
-                    MountPath = claim.Path
+                    Name = VolumeName(PvcPrefix, claim.Name),
+                    MountPath = claim.Path,
+                    ReadOnly = claim.MountReadOnly
                 });
             }
 
             return mounts;
         }
+
+        static string VolumeName(string prefix, string name) => $"{prefix}-{name}";
     }
 
     private static List<ContainerPort> CreateContainerPorts(global::ContainerPort[] ports)

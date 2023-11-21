@@ -92,31 +92,22 @@ The default is `ReadWriteOnce`. When `Access` is `ReadWriteOnce` or `ReadWriteOn
                             [ Limit="1Gi" StorageClass="myclass" Access="ReadWriteMany" ]/>
 ```
 
-## Application ConfigMap
+### ConfigMap
 
-The application is deployed with a `ConfigMap` with the same name as the application.
+Config maps can be configured using `ContainerConfigMap`.
 
-The `ConfigMap` is prepopulated with an empty `appsettings.json` entry.
+**Example:**
 
-```yaml
-kind: ConfigMap
-apiVersion: v1
-data:
-  appsettings.json: |-
-    {
-    }
+```xml
+<ContainerConfigMap Include="config" Path="/config"
+                    [ ReadOnly="true" ]/>
 ```
 
-The `ConfigMap` is **not** overwritten when the application is re-deployed.
-
-The `ConfigMap` is mounted in the container at `/config`.
-
-The `appsettings.json` file can be added to the ASP.NET configuration by using the following code:
+An `appsettings.json` file can be loaded from the above config map using the following code:
 
 ```cs
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("/config/appsettings.json", optional: true, reloadOnChange: true);
 ```
 
-The `reloadOnChange: true` argument causes the application to pick up changes made to the `ConfigMap`
-without requiring a restart.
+The `reloadOnChange: true` argument causes the application to pick up changes made to the `ConfigMap` without requiring a restart.
