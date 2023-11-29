@@ -6,14 +6,15 @@ using OpenShift;
 
 sealed partial class DeployHandler
 {
+    // This is used to find back the application container on existing deployments. Do not change!
     private const string ContainerName = "app";
 
     private async Task<Deployment> ApplyAppDeployment(
         IOpenShiftClient client,
         string name,
         Deployment? previous,
-        string imageStreamTagName,
         string? gitUri, string? gitRef,
+        string? appImage, string? appImageStreamTagName,
         global::ContainerPort[] ports,
         PersistentStorage[] claims,
         ConfMap[] configMaps,
@@ -24,8 +25,9 @@ sealed partial class DeployHandler
     {
         Deployment deployment = CreateAppDeployment(
             name,
-            imageStreamTagName,
             gitUri, gitRef,
+            appImage,
+            appImageStreamTagName,
             ports,
             claims,
             configMaps,
@@ -47,6 +49,8 @@ sealed partial class DeployHandler
                                                            update.Spec.Replicas = previous.Spec.Replicas;
                                                            // Preserve resources set on the previous deployment.
                                                            FindAppContainer(update.Spec.Template.Spec.Containers)!.Resources ??= FindAppContainer(previous.Spec.Template.Spec.Containers)?.Resources;
+                                                           // Preserve image set on the previous deployment.
+                                                           FindAppContainer(update.Spec.Template.Spec.Containers)!.Image ??= FindAppContainer(previous.Spec.Template.Spec.Containers)?.Image;
                                                        },
                                                        cancellationToken);
         }
@@ -57,8 +61,8 @@ sealed partial class DeployHandler
 
     private static Deployment CreateAppDeployment(
         string name,
-        string imageStreamTagName,
         string? gitUri, string? gitRef,
+        string? appImage, string? appImageStreamTagName,
         global::ContainerPort[] ports,
         PersistentStorage[] claims,
         ConfMap[] configMaps,
@@ -69,7 +73,7 @@ sealed partial class DeployHandler
         const string PvcPrefix = "pvc";
         const string ConfigMapPrefix = "cfg";
 
-        Dictionary<string, string> annotations = GetAppDeploymentAnnotations(imageStreamTagName, gitUri, gitRef);
+        Dictionary<string, string> annotations = GetAppDeploymentAnnotations(gitUri, gitRef, appImageStreamTagName);
 
         // If only a single mount is allowed, the previous pod must be down, so the new pod can attach.
         bool hasReadWriteOnceVolumes = claims.Any(c => c.Access == "ReadWriteOnce" || c.Access == "ReadWriteOncePod");
@@ -110,7 +114,7 @@ sealed partial class DeployHandler
                             new()
                             {
                                 Name = ContainerName,
-                                Image = imageStreamTagName,
+                                Image = appImage,
                                 Ports = CreateContainerPorts(ports),
                                 VolumeMounts = CreateVolumeMounts(claims, configMaps),
                                 Resources = CreateResourceRequirements(containerLimits)
@@ -232,25 +236,30 @@ sealed partial class DeployHandler
         }).ToList();
     }
 
-    private static Dictionary<string, string> GetAppDeploymentAnnotations(string imageStreamTagName, string? gitUri, string? gitRef)
+    private static Dictionary<string, string> GetAppDeploymentAnnotations(string? gitUri, string? gitRef, string? appImageStreamTagName)
     {
-        Dictionary<string, string> annotations = new()
+        Dictionary<string, string> annotations = new();
+        if (appImageStreamTagName is not null)
         {
-            { Annotations.OpenShiftTriggers, Serialize(new List<DeploymentTrigger>()
-                {
-                        new()
-                        {
-                            From = new()
+            // OpenShift Console uses this to group the BuildConfig under the Deployment resources by matching it via an ImageStreamTag.
+            annotations[Annotations.OpenShiftTriggers] =
+                Serialize(
+                    new List<DeploymentTrigger>()
+                    {
+                            new()
                             {
-                                Kind = "ImageStreamTag",
-                                Name = imageStreamTagName
-                            },
-                            FieldPath = $"spec.template.spec.containers[?(@.name==\"{ContainerName}\")].image",
-                            Pause = "false"
-                        }
-                })
-            }
-        };
+                                From = new()
+                                {
+                                    Kind = "ImageStreamTag",
+                                    Name = appImageStreamTagName
+                                },
+                                FieldPath = $"spec.template.spec.containers[?(@.name==\"{ContainerName}\")].image",
+                                // Set the trigger to Pause so changes to the deployment are deployed in sync with the image.
+                                Pause = "true"
+                            }
+                    }
+                );
+        }
         if (gitUri is not null && gitRef is not null)
         {
             annotations[Annotations.VersionControlRef] = gitRef;
