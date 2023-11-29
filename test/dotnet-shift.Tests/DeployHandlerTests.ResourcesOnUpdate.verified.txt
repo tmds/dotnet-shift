@@ -1,6 +1,13 @@
 ﻿[
   {
     ApiVersion: build.openshift.io/v1,
+    Kind: Build,
+    Metadata: {
+      Name: mycomponent-binary-0
+    }
+  },
+  {
+    ApiVersion: build.openshift.io/v1,
     Kind: BuildConfig,
     Metadata: {
       Labels: {
@@ -43,7 +50,7 @@
       Annotations: {
         app.openshift.io/vcs-ref: mybranch_2,
         app.openshift.io/vcs-uri: http://myurl_2,
-        image.openshift.io/triggers: [{"from":{"kind":"ImageStreamTag","name":"mycomponent:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"app\")].image","pause":"false"}]
+        image.openshift.io/triggers: [{"from":{"kind":"ImageStreamTag","name":"mycomponent:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"app\")].image","pause":"true"}]
       },
       Labels: {
         app.kubernetes.io/component: mycomponent,
@@ -73,7 +80,7 @@
         Spec: {
           Containers: [
             {
-              Image: mycomponent:latest,
+              Image: image-registry.openshift-image-registry.svc:5000/mynamespace/mycomponent@sha256:deadbeef,
               Name: app,
               Ports: [
                 {

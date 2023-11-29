@@ -221,7 +221,7 @@ partial class AppCommandLine
                                 string? partOf = parseResult.GetValue(Options.PartOfOption);
                                 string? name = parseResult.GetValue(Options.DeploymentNameOption);
 
-                                return await handler.ExecuteAsync(loginContext, project, name, partOf, expose, follow: !noFollow, startBuild: !noBuild, cancellationToken);
+                                return await handler.ExecuteAsync(loginContext, project, name, partOf, expose, follow: !noFollow, doBuild: !noBuild, cancellationToken);
                             })
                             .Build();
 

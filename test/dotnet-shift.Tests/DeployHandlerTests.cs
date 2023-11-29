@@ -135,10 +135,16 @@ public class DeployHandlerTests : IDisposable
     [Fact]
     public async Task ResourcesOnCreate()
     {
+        const string MyNamespace = "mynamespace";
+        const string MyComponentName = "mycomponent";
+        const string ImageSha = "sha256:deadbeef";
+        const string ImageRegistry = $"image-registry.openshift-image-registry.svc:5000/{MyNamespace}/{MyComponentName}";
         using MockOpenShiftServer server = new();
+        AddDotnetImageStreamAvailableController(server);
+        AddBuildCompletedCompletedController(server, $"{MyComponentName}-binary-0", ImageRegistry, ImageSha);
 
         int rv = await DeployAsync(server,
-            nameArg: "mycomponent",
+            nameArg: MyComponentName,
             partOfArg: "myapp",
             exposeArg: true,
             projectInfo: new()
@@ -151,7 +157,7 @@ public class DeployHandlerTests : IDisposable
                 RemoteBranch = "mybranch1",
                 RemoteUrl = "http://myurl"
             },
-            startBuildArg: false, followArg: false
+            startBuildArg: true, followArg: false
             );
 
         Assert.Equal(0, rv);
@@ -228,13 +234,16 @@ public class DeployHandlerTests : IDisposable
     [Fact]
     public async Task ResourcesOnUpdate()
     {
+        const string MyNamespace = "mynamespace";
+        const string MyComponentName = "mycomponent";
+        const string ImageSha = "sha256:deadbeef";
+        const string ImageRegistry = $"image-registry.openshift-image-registry.svc:5000/{MyNamespace}/{MyComponentName}";
         using MockOpenShiftServer server = new();
-
-        // We create, and update the same component.
-        const string ComponentName = "mycomponent";
+        AddDotnetImageStreamAvailableController(server);
+        AddBuildCompletedCompletedController(server, $"{MyComponentName}-binary-0", ImageRegistry, ImageSha);
 
         int rv = await DeployAsync(server,
-            nameArg: ComponentName,
+            nameArg: MyComponentName,
             partOfArg: "myapp_1",
             exposeArg: true,
             projectInfo: new()
@@ -246,11 +255,12 @@ public class DeployHandlerTests : IDisposable
             {
                 RemoteBranch = "mybranch_1",
                 RemoteUrl = "http://myurl_1"
-            });
+            },
+            startBuildArg: true);
         Assert.Equal(0, rv);
 
         rv = await DeployAsync(server,
-            nameArg: ComponentName,
+            nameArg: MyComponentName,
             partOfArg: "myapp_2",
             exposeArg: true,
             projectInfo: new()
@@ -262,7 +272,8 @@ public class DeployHandlerTests : IDisposable
             {
                 RemoteBranch = "mybranch_2",
                 RemoteUrl = "http://myurl_2"
-            });
+            },
+            startBuildArg: false);
         Assert.Equal(0, rv);
 
         await Verify(server.ResourceSpecs);
