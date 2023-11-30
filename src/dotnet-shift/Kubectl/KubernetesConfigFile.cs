@@ -6,10 +6,15 @@ using System.Runtime.InteropServices;
 
 sealed class KubernetesConfigFile : ILoginContextRepository
 {
+    private static readonly string KubeConfigDefaultLocation =
+            RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? Path.Combine(Environment.GetEnvironmentVariable("USERPROFILE") ?? @"\", @".kube\config")
+                : Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? "/", ".kube/config");
+
     private readonly string _configFilePath;
 
     public KubernetesConfigFile() :
-        this(KubernetesClientConfiguration.KubeConfigDefaultLocation)
+        this(KubeConfigDefaultLocation)
     { }
 
     public KubernetesConfigFile(string configFilePath)
@@ -24,7 +29,7 @@ sealed class KubernetesConfigFile : ILoginContextRepository
             return null;
         }
 
-        K8SConfiguration config = KubernetesClientConfiguration.LoadKubeConfig(_configFilePath);
+        K8SConfiguration config = LoadKubeConfig(_configFilePath);
 
         string contextID = config.CurrentContext;
         Context? context = config.Contexts.FirstOrDefault(c => c.Name == contextID);
@@ -127,9 +132,19 @@ sealed class KubernetesConfigFile : ILoginContextRepository
         fs.Write(Encoding.UTF8.GetBytes(KubernetesYaml.Serialize(config)));
     }
 
+    private static K8SConfiguration LoadKubeConfig(string path)
+    {
+        using (var stream = File.OpenRead(path))
+        {
+            var config = KubernetesYaml.LoadFromStreamAsync<K8SConfiguration>(stream).GetAwaiter().GetResult();
+
+            return config;
+        }
+    }
+
     private static void UpdateConfigfile(string _configFilePath, Cluster cluster, Context context, k8s.KubeConfigModels.User user, bool setCurrent)
     {
-        K8SConfiguration config = KubernetesClientConfiguration.LoadKubeConfig(_configFilePath);
+        K8SConfiguration config = LoadKubeConfig(_configFilePath);
         if (setCurrent)
         {
             config.CurrentContext = context.Name;
@@ -167,7 +182,7 @@ sealed class KubernetesConfigFile : ILoginContextRepository
             return logins;
         }
 
-        K8SConfiguration config = KubernetesClientConfiguration.LoadKubeConfig(_configFilePath);
+        K8SConfiguration config = LoadKubeConfig(_configFilePath);
 
         foreach (var context in config.Contexts)
         {
@@ -222,7 +237,7 @@ sealed class KubernetesConfigFile : ILoginContextRepository
 
     public void SetCurrentContext(string contextName)
     {
-        K8SConfiguration config = KubernetesClientConfiguration.LoadKubeConfig(_configFilePath);
+        K8SConfiguration config = LoadKubeConfig(_configFilePath);
         config.CurrentContext = contextName;
         WriteConfigFile(_configFilePath, config);
     }
@@ -234,7 +249,7 @@ sealed class KubernetesConfigFile : ILoginContextRepository
             return false;
         }
 
-        K8SConfiguration config = KubernetesClientConfiguration.LoadKubeConfig(_configFilePath);
+        K8SConfiguration config = LoadKubeConfig(_configFilePath);
         Context? context = config.Contexts.FirstOrDefault(c => c.Name == contextName);
         if (context is null)
         {

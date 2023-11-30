@@ -18,9 +18,9 @@
 
   <ItemGroup>
     <PackageReference Include="Fractions" Version="7.3.0" />
-    <PackageReference Include="KubernetesClient" Version="12.1.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="YamlDotNet" Version="13.7.1" />
     <PackageReference Include="Spectre.Console" Version="0.48.0" />
     <PackageReference Include="System.CommandLine" Version="2.0.*-*" />
     <PackageReference Include="Microsoft.Build.Locator" Version="1.6.10" />
