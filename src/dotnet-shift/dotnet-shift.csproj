@@ -8,8 +8,8 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Copyright>Tom Deseyn</Copyright>
     <PackageId>dotnet-shift</PackageId>
-    <TargetFramework>net7.0</TargetFramework>
-    <TargetFrameworks>net6.0;net7.0</TargetFrameworks>
+    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>net6.0;net7.0;net8.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
@@ -18,19 +18,20 @@
 
   <ItemGroup>
     <PackageReference Include="Fractions" Version="7.3.0" />
-    <PackageReference Include="KubernetesClient" Version="10.1.4" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="7.0.0" />
+    <PackageReference Include="KubernetesClient" Version="12.1.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="Spectre.Console" Version="0.46.0" />
+    <PackageReference Include="Spectre.Console" Version="0.48.0" />
     <PackageReference Include="System.CommandLine" Version="2.0.*-*" />
-    <PackageReference Include="Microsoft.Build.Locator" Version="1.5.5" />
-    <PackageReference Include="PolySharp" Version="1.8.1">
+    <PackageReference Include="Microsoft.Build.Locator" Version="1.6.10" />
+    <PackageReference Include="PolySharp" Version="1.14.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="System.IO.Pipelines" Version="7.0.0" />
+    <PackageReference Include="System.IO.Pipelines" Version="8.0.0" />
     <PackageReference Condition="'$(TargetFramework)'=='net6.0'" Include="Microsoft.Build" Version="17.3.0" ExcludeAssets="runtime" />
     <PackageReference Condition="'$(TargetFramework)'=='net7.0'" Include="Microsoft.Build" Version="17.5.0" ExcludeAssets="runtime" />
+    <PackageReference Condition="'$(TargetFramework)'=='net8.0'" Include="Microsoft.Build" Version="17.8.3" ExcludeAssets="runtime" />
   </ItemGroup>
 
 </Project>
