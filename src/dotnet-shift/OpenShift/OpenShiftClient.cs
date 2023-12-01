@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Security;
 using System.Net.WebSockets;
+using System.Security.Cryptography.X509Certificates;
 
 #nullable disable
 
@@ -14,15 +15,17 @@ partial class OpenShiftClient : IOpenShiftClient
     private bool SkipTlsVerify { get; }
     private string BaseUrl { get; }
     private string Token { get; }
+    private X509Certificate2Collection CACerts { get; }
 
-    public OpenShiftClient(string server, string token, string @namespace, bool skipTlsVerify)
+    public OpenShiftClient(string server, string token, string @namespace, bool skipTlsVerify, X509Certificate2Collection caCerts)
     {
         BaseUrl = server;
         Namespace = @namespace;
         SkipTlsVerify = skipTlsVerify;
         Token = token;
+        CACerts = caCerts;
         _settings = new Lazy<Newtonsoft.Json.JsonSerializerSettings>(CreateSerializerSettings);
-        _httpClient = new HttpClient(new MessageHandler(token, skipTlsVerify, Host));
+        _httpClient = new HttpClient(new MessageHandler(token, skipTlsVerify, caCerts, Host));
     }
 
     public void Dispose()
@@ -65,7 +68,7 @@ partial class OpenShiftClient : IOpenShiftClient
         private readonly AuthenticationHeaderValue _authHeader;
         private readonly string _host;
 
-        public MessageHandler(string token, bool skipTlsVerify, string host) : base(CreateBaseHandler(skipTlsVerify))
+        public MessageHandler(string token, bool skipTlsVerify, X509Certificate2Collection caCerts, string host) : base(CreateBaseHandler(skipTlsVerify, caCerts))
         {
             _authHeader = new AuthenticationHeaderValue("Bearer", token);
             _host = host;
@@ -95,7 +98,7 @@ partial class OpenShiftClient : IOpenShiftClient
             }
         }
 
-        private static HttpMessageHandler CreateBaseHandler(bool skipTlsVerify)
+        private static HttpMessageHandler CreateBaseHandler(bool skipTlsVerify, X509Certificate2Collection caCerts)
         {
             var handler = new SocketsHttpHandler();
 
@@ -103,8 +106,15 @@ partial class OpenShiftClient : IOpenShiftClient
             {
                 handler.SslOptions = new SslClientAuthenticationOptions()
                 {
-                    // TODO: only ignore unknown root?
                     RemoteCertificateValidationCallback = delegate { return true; },
+                };
+            }
+            else if (caCerts is not null)
+            {
+                handler.SslOptions = new SslClientAuthenticationOptions()
+                {
+                    RemoteCertificateValidationCallback =
+                        (sender, certificate, chain, sslPolicyErrors) => ValidateCertificate(sender, caCerts, certificate, chain, sslPolicyErrors),
                 };
             }
 
@@ -202,6 +212,11 @@ partial class OpenShiftClient : IOpenShiftClient
         {
             webSocket.Options.RemoteCertificateValidationCallback = delegate { return true; };
         }
+        if (CACerts is not null)
+        {
+            webSocket.Options.RemoteCertificateValidationCallback =
+                (sender, certificate, chain, sslPolicyErrors) => ValidateCertificate(sender, CACerts, certificate, chain, sslPolicyErrors);
+        }
         return webSocket;
     }
 
@@ -232,4 +247,36 @@ partial class OpenShiftClient : IOpenShiftClient
     partial void PrepareRequest(System.Net.Http.HttpClient client, System.Net.Http.HttpRequestMessage request, string url);
     partial void PrepareRequest(System.Net.Http.HttpClient client, System.Net.Http.HttpRequestMessage request, System.Text.StringBuilder urlBuilder);
     partial void ProcessResponse(System.Net.Http.HttpClient client, System.Net.Http.HttpResponseMessage response);
+
+    internal static bool ValidateCertificate(object sender, X509Certificate2Collection caCerts, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors)
+    {
+        if (sslPolicyErrors == SslPolicyErrors.None)
+        {
+            return true;
+        }
+
+        if ((sslPolicyErrors & SslPolicyErrors.RemoteCertificateChainErrors) != 0)
+        {
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+            chain.ChainPolicy.ExtraStore.AddRange(caCerts);
+            chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
+
+            bool isValid = chain.Build((X509Certificate2)certificate);
+            if (!isValid)
+            {
+                return false;
+            }
+
+            foreach (var caCert in caCerts)
+            {
+                bool isTrusted = chain.Build(caCert);
+                if (isTrusted)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 }
