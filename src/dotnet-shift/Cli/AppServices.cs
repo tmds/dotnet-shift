@@ -6,6 +6,7 @@ sealed class AppServices
     public ILogger Logger { get; }
     public IAnsiConsole Console { get; }
     public ILoginContextRepository KubeConfig { get; }
+    public ILoginContextProvider LoginProvider { get; }
     public IOpenShiftClientFactory OpenShiftClientFactory { get; }
     public IProjectReader ProjectReader { get; }
     public IGitRepoReader GitRepoReader { get; }
@@ -23,6 +24,7 @@ sealed class AppServices
         Logger = logger ?? NullLogger.Instance;
         WorkingDirectory = workingDirectory ?? Directory.GetCurrentDirectory();
         KubeConfig = kubeConfig ?? new Kubectl.KubernetesConfigFile();
+        LoginProvider = new Kubectl.LoginContextProvider(KubeConfig);
         OpenShiftClientFactory = openshiftClientFactory ?? new OpenShift.OpenShiftClientFactory();
         ProjectReader = projectReader ?? new MSBuild.ProjectReader();
         GitRepoReader = repoReader ?? new Git.GitRepoReader();
