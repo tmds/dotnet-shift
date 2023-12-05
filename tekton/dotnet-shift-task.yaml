@@ -1,0 +1,36 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: dotnet-shift
+spec:
+  params:
+    - name: SDK_VERSION
+      default: latest
+      description: The tag of .NET imagestream for the SDK.
+      type: string
+    - name: PROJECT
+      description: The location of the .NET project.
+      type: string
+    - name: NAME
+      description: Name of the component.
+      type: string
+      default: ""
+    - name: EXPOSE
+      description: Set to 'yes' to make the application externally accessible.
+      type: string
+      default: ""
+  steps:
+    - name: dotnet-shift
+      image: image-registry.openshift-image-registry.svc:5000/$(context.taskRun.namespace)/dotnet:$(params.SDK_VERSION)
+      workingDir: $(workspaces.source.path)
+      script: |
+        dotnet tool update -g dotnet-shift --prerelease --add-source https://www.myget.org/F/tmds/api/v3/index.json >/dev/null
+
+        args=()
+        [ -n "$(params.NAME)" ] && args+=(--name "$(params.NAME)")
+        [ "$(params.EXPOSE)" == "yes" ] && args+=(--expose)
+
+        dotnet shift deploy ${args[0]+"${args[@]}"} "$(params.PROJECT)"
+  workspaces:
+    - mountPath: /workspace/source
+      name: source
