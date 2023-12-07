@@ -52,7 +52,8 @@ sealed class LoginContextProvider : ILoginContextProvider
             Username = "<serviceaccount>",
             Namespace = File.ReadAllText(NamespacePath),
             CACerts = caCerts,
-            SkipTlsVerify = false
+            SkipTlsVerify = false,
+            IsPodServiceAccount = true
         };
     }
 }

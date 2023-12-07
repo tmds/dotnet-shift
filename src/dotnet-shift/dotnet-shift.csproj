@@ -10,7 +10,7 @@
     <PackageId>dotnet-shift</PackageId>
     <RollForward>Major</RollForward>
     <TargetFramework>net7.0</TargetFramework>
-    <TargetFrameworks>net6.0;net7.0</TargetFrameworks>
+    <TargetFrameworks>net6.0;$(TargetFramework)</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>

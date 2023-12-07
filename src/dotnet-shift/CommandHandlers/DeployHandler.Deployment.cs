@@ -14,7 +14,7 @@ sealed partial class DeployHandler
         string name,
         Deployment? previous,
         string? gitUri, string? gitRef,
-        string? appImage, string? appImageStreamTagName,
+        string? appImage, string appImageStreamTagName,
         global::ContainerPort[] ports,
         PersistentStorage[] claims,
         ConfMap[] configMaps,
@@ -62,7 +62,7 @@ sealed partial class DeployHandler
     private static Deployment CreateAppDeployment(
         string name,
         string? gitUri, string? gitRef,
-        string? appImage, string? appImageStreamTagName,
+        string? appImage, string appImageStreamTagName,
         global::ContainerPort[] ports,
         PersistentStorage[] claims,
         ConfMap[] configMaps,
@@ -255,7 +255,7 @@ sealed partial class DeployHandler
                                 },
                                 FieldPath = $"spec.template.spec.containers[?(@.name==\"{ContainerName}\")].image",
                                 // Set the trigger to Pause so changes to the deployment are deployed in sync with the image.
-                                Pause = "true"
+                                Paused = "true"
                             }
                     }
                 );

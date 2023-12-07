@@ -9,4 +9,5 @@ sealed class LoginContext
     public required string Namespace { get; set; }
     public required bool SkipTlsVerify { get; set; }
     public X509Certificate2Collection? CACerts { get; set; }
+    public bool IsPodServiceAccount { get; set; }
 }
