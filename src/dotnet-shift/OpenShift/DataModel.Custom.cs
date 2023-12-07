@@ -10,8 +10,8 @@ sealed record DeploymentTrigger
     [Newtonsoft.Json.JsonProperty("fieldPath")]
     public string FieldPath { get; set; }
 
-    [Newtonsoft.Json.JsonProperty("pause")]
-    public string Pause { get; set; }
+    [Newtonsoft.Json.JsonProperty("paused")]
+    public string Paused { get; set; }
 
     public class DeploymentTriggerFrom
     {

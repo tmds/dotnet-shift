@@ -5,15 +5,19 @@ using OpenShift;
 sealed partial class DeployHandler
 {
     private const string DotnetImageStreamName = "dotnet";
+    private const string DotnetRuntimeImageStreamName = "dotnet-runtime";
 
     private async Task<ImageStream> ApplyDotnetImageStreamTag(
         IOpenShiftClient client,
+        string imageStreamName,
         ImageStream? previous,
-        string dotnetVersion,
+        string version,
         CancellationToken cancellationToken)
     {
-        string s2iImage = GetS2iImage(dotnetVersion);
-        ImageStream imageStream = CreateDotnetImageStream(dotnetVersion, s2iImage);
+        Debug.Assert(previous is null || previous.Metadata.Name == imageStreamName);
+
+        string image = DetermineDotnetImageStreamImage(imageStreamName, version);
+        ImageStream imageStream = CreateDotnetImageStream(imageStreamName, version, image);
 
         if (previous is null)
         {
@@ -26,10 +30,10 @@ sealed partial class DeployHandler
         }
     }
 
-    private async Task<bool> CheckRuntimeImageAvailableAsync(IOpenShiftClient client, ImageStream imageStream, string runtimeVersion, CancellationToken cancellationToken)
+    private async Task<bool> CheckImageTagAvailable(IOpenShiftClient client, ImageStream imageStream, string tag, CancellationToken cancellationToken)
     {
-        string runtime = imageStream.Metadata.Name;
-        string s2iImageTag = $"{runtime}:{runtimeVersion}";
+        string image = imageStream.Metadata.Name;
+        string imageWithTag = $"{image}:{tag}";
 
         bool printedImageNotYetAvailable = false;
         Stopwatch stopwatch = new();
@@ -38,13 +42,13 @@ sealed partial class DeployHandler
         ImageStream? current = imageStream;
         do
         {
-            if (!current.Spec.Tags.Any(t => t.Name == runtimeVersion))
+            if (!current.Spec.Tags.Any(t => t.Name == tag))
             {
-                Console.WriteErrorLine($"The image tag '{s2iImageTag}' is missing.");
+                Console.WriteErrorLine($"The image tag '{imageWithTag}' is missing.");
                 return false;
             }
 
-            NamedTagEventList? tagStatus = current.Status.Tags?.FirstOrDefault(t => t.Tag == runtimeVersion);
+            NamedTagEventList? tagStatus = current.Status.Tags?.FirstOrDefault(t => t.Tag == tag);
             if (tagStatus is not null)
             {
                 if (tagStatus.Items is { Count: > 0 })
@@ -55,15 +59,15 @@ sealed partial class DeployHandler
                 TagEventCondition? importCondition = tagStatus.Conditions?.FirstOrDefault(t => t.Type == "ImportSuccess");
                 if (importCondition?.Status == "False")
                 {
-                    Console.WriteErrorLine($"The {runtime} s2i image is not available for '{runtimeVersion}.' The image could not be imported: \"{importCondition.Message}\".");
+                    Console.WriteErrorLine($"The {image} s2i image is not available for '{tag}.' The image could not be imported: \"{importCondition.Message}\".");
                     return false;
                 }
             }
 
-            current = await client.GetImageStreamAsync(runtime, cancellationToken);
+            current = await client.GetImageStreamAsync(image, cancellationToken);
             if (current is null)
             {
-                Console.WriteErrorLine($"The image stream '{runtime}' is missing.");
+                Console.WriteErrorLine($"The image stream '{image}' is missing.");
                 return false;
             }
 
@@ -73,18 +77,20 @@ sealed partial class DeployHandler
                 elapsed > ShortFeedbackTimeout)
             {
                 printedImageNotYetAvailable = true;
-                Console.WriteLine($"Waiting for the {runtime} s2i image for '{runtimeVersion}' to get imported.");
+                Console.WriteLine($"Waiting for the {image} s2i image for '{tag}' to get imported.");
             }
 
             await Task.Delay(100, cancellationToken);
         } while (true);
     }
 
-    private static string GetS2iImage(string version)
+    private static string DetermineDotnetImageStreamImage(string imageStreamName, string version)
     {
         string versionNoDot = version.Replace(".", "");
 
-        return $"registry.access.redhat.com/{DotNetVersionToRedHatBaseImage(version)}/dotnet-{versionNoDot}:latest";
+        string suffix = imageStreamName == DotnetRuntimeImageStreamName ? "-runtime" : "";
+
+        return $"registry.access.redhat.com/{DotNetVersionToRedHatBaseImage(version)}/dotnet-{versionNoDot}{suffix}:latest";
 
         static string DotNetVersionToRedHatBaseImage(string version) => version switch
         {
@@ -93,19 +99,21 @@ sealed partial class DeployHandler
     }
 
     private static ImageStream CreateDotnetImageStream(
+        string imageStreamName,
         string dotnetVersion,
-        string s2iImage)
+        string containerImage)
     {
+        string displayName = imageStreamName == DotnetRuntimeImageStreamName ? ".NET Runtime" : ".NET";
         return new ImageStream
         {
             ApiVersion = "image.openshift.io/v1",
             Kind = "ImageStream",
             Metadata = new()
             {
-                Name = DotnetImageStreamName,
+                Name = imageStreamName,
                 Annotations = new Dictionary<string, string>()
                 {
-                    { "openshift.io/display-name", ".NET" },
+                    { "openshift.io/display-name", displayName },
                     { "openshift.io/provider-display-name", "Red Hat" }
                 }
             },
@@ -118,7 +126,7 @@ sealed partial class DeployHandler
                         Name = dotnetVersion,
                         Annotations = new Dictionary<string, string>()
                         {
-                            { "openshift.io/display-name", $".NET {dotnetVersion}" },
+                            { "openshift.io/display-name", $"{displayName} {dotnetVersion}" },
                         },
                         ReferencePolicy = new()
                         {
@@ -127,7 +135,7 @@ sealed partial class DeployHandler
                         From = new()
                         {
                             Kind = "DockerImage",
-                            Name = s2iImage
+                            Name = containerImage
                         },
                         // Poll the s2i image registry for updates.
                         ImportPolicy = new()

@@ -50,7 +50,7 @@
       Annotations: {
         app.openshift.io/vcs-ref: mybranch_2,
         app.openshift.io/vcs-uri: http://myurl_2,
-        image.openshift.io/triggers: [{"from":{"kind":"ImageStreamTag","name":"mycomponent:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"app\")].image","pause":"true"}]
+        image.openshift.io/triggers: [{"from":{"kind":"ImageStreamTag","name":"mycomponent:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"app\")].image","paused":"true"}]
       },
       Labels: {
         app.kubernetes.io/component: mycomponent,
@@ -120,22 +120,6 @@
             Scheduled: true
           },
           Name: 3.0,
-          ReferencePolicy: {
-            Type: Local
-          }
-        },
-        {
-          Annotations: {
-            openshift.io/display-name: .NET 4.0
-          },
-          From: {
-            Kind: DockerImage,
-            Name: registry.access.redhat.com/ubi8/dotnet-40:latest
-          },
-          ImportPolicy: {
-            Scheduled: true
-          },
-          Name: 4.0,
           ReferencePolicy: {
             Type: Local
           }

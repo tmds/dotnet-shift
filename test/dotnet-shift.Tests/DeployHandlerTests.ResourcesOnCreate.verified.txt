@@ -50,7 +50,7 @@
       Annotations: {
         app.openshift.io/vcs-ref: mybranch1,
         app.openshift.io/vcs-uri: http://myurl,
-        image.openshift.io/triggers: [{"from":{"kind":"ImageStreamTag","name":"mycomponent:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"app\")].image","pause":"true"}]
+        image.openshift.io/triggers: [{"from":{"kind":"ImageStreamTag","name":"mycomponent:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"app\")].image","paused":"true"}]
       },
       Labels: {
         app.kubernetes.io/component: mycomponent,

@@ -37,7 +37,8 @@ sealed partial class DeployHandler
         public ImageStream? ImageStream { get; init; }
         public Route? Route { get; init; }
         public Service? Service { get; init; }
-        public ImageStream? S2iImageStream { get; init; }
+        public ImageStream? DotnetImageStream { get; init; }
+        public ImageStream? DotnetRuntimeImageStream { get; init; }
         public required Dictionary<string, PersistentVolumeClaim> PersistentVolumeClaims { get; init; }
     }
 
@@ -66,7 +67,6 @@ sealed partial class DeployHandler
         Debug.Assert(projectInfo.AssemblyName is not null);
         Debug.Assert(projectInfo.DotnetVersion is not null);
 
-        string runtime = ResourceLabelValues.DotnetRuntime;
         string runtimeVersion = projectInfo.DotnetVersion;
 
         // Get git information.
@@ -85,8 +85,7 @@ sealed partial class DeployHandler
         Console.WriteLine($"Retrieving existing resources...");
         List<string> storageNames = projectInfo.VolumeClaims.Select(claim => GetResourceNameFor(name, claim)).ToList();
         List<string> mapNames = projectInfo.ConfigMaps.Select(map => GetResourceNameFor(name, map)).ToList();
-        ComponentResources resources = await GetDeployedResources(client,
-            name, binaryBuildConfigName, storageNames, mapNames, runtime, cancellationToken);
+        ComponentResources resources = await GetDeployedResources(client, name, binaryBuildConfigName, storageNames, mapNames, cancellationToken);
 
         // If partOf was not set, default to the application of existing resources,
         // or the name of the deployment.
@@ -113,55 +112,41 @@ sealed partial class DeployHandler
             return CommandResult.Failure;
         }
 
-        string? appImageStreamTagName = $"{name}:latest";
+        string appImageStreamTagName = $"{name}:latest";
 
-        Console.WriteLine(); // section "build"
-        Console.WriteLine("Updating build resources...");
-        await UpdateBuildResourcesAsync(
-                                client, resources, name, binaryBuildConfigName, appImageStreamTagName,
-                                runtime, runtimeVersion, partOf, cancellationToken);
+        // If we're running inside the cluster, build the image directly in the pod using the SDK.
+        bool useS2iBuild = login.IsPodServiceAccount ? false: true;
+
         string? appImage = null;
         if (doBuild)
         {
-            // Ensure the s2i image is resolved.
-            if (resources.S2iImageStream is not null &&
-                !await CheckRuntimeImageAvailableAsync(client, resources.S2iImageStream, runtimeVersion, cancellationToken))
+            Console.WriteLine(); // section "build"
+            Console.WriteLine("Updating build resources...");
+            await UpdateBuildResourcesAsync(client, useS2iBuild, resources, name, binaryBuildConfigName, appImageStreamTagName, runtimeVersion, partOf, cancellationToken);
+            if (useS2iBuild)
+            {
+                appImage = await S2IBuildAsync(projectFile, contextDir, projectInfo, runtimeVersion, binaryBuildConfigName, client, resources, cancellationToken);
+            }
+            else
+            {
+                appImage = await SdkImageBuildAsync(client, projectFile, appImageStreamTagName, runtimeVersion, resources, cancellationToken);
+            }
+            if (appImage is null)
             {
                 return CommandResult.Failure;
             }
-
-            // Upload sources and start the build.
-            Console.WriteLine($"Uploading sources from directory '{contextDir}'...");
-            Build? build = await StartBuildAsync(client, binaryBuildConfigName, contextDir, projectFile,
-                                                 projectInfo.ContainerEnvironmentVariables, cancellationToken);
-
-            // Follow the build.
-            string buildName = build.Metadata.Name;
-            build = await FollowBuildAsync(client, buildName, cancellationToken);
-            if (build is null)
-            {
-                Console.WriteErrorLine($"The build '{buildName}' is missing.");
-                return CommandResult.Failure;
-            }
-            Debug.Assert(build.IsBuildFinished());
-
-            // Report build fail/success.
-            if (!CheckBuildNotFailed(build, out appImage))
-            {
-                return CommandResult.Failure;
-            }
-            Debug.Assert(appImage is not null);
-        }
-        else
-        {
-            Console.WriteLine("The image build is skipped for this deployment.");
         }
 
         Console.WriteLine(); // section "deployment"
         Console.WriteLine("Updating deployment resources...");
+        if (!doBuild)
+        {
+            // Keep build resources in sync also when we're not doing a build.
+            await UpdateBuildResourcesAsync(client, useS2iBuild, resources, name, binaryBuildConfigName, appImageStreamTagName, runtimeVersion, partOf, cancellationToken);
+        }
         Route? route = await UpdateResourcesAsync(
                                     client, resources, name,
-                                    runtime, runtimeVersion,
+                                    runtimeVersion,
                                     gitUri: gitInfo?.RemoteUrl, gitRef: gitInfo?.RemoteBranch,
                                     appImage, appImageStreamTagName,
                                     partOf, expose, projectInfo.ContainerPorts, projectInfo.ExposedPort,
@@ -185,6 +170,169 @@ sealed partial class DeployHandler
         }
 
         return CommandResult.Success;
+    }
+
+    private async Task<string?> SdkImageBuildAsync(IOpenShiftClient client, string projectFile, string appImageStreamTagName, string runtimeVersion, ComponentResources resources, CancellationToken cancellationToken)
+    {
+        string registry = "image-registry.openshift-image-registry.svc:5000";
+        string tag = appImageStreamTagName.Substring(appImageStreamTagName.IndexOf(':') + 1);
+        string repository = $"{client.Namespace}/{appImageStreamTagName.Substring(0, appImageStreamTagName.Length - tag.Length - 1)}";
+        string containerBaseImage = $"{registry}/{client.Namespace}/{DotnetRuntimeImageStreamName}:{runtimeVersion}";
+
+        // Ensure the runtime base image is defined and resolved.
+        ImageStream? s2iImageStream = await ApplyDotnetImageStreamTag(
+                                        client,
+                                        DotnetRuntimeImageStreamName,
+                                        resources.DotnetRuntimeImageStream,
+                                        runtimeVersion,
+                                        cancellationToken);
+        if (!await CheckImageTagAvailable(client, s2iImageStream, runtimeVersion, cancellationToken))
+        {
+            return null;
+        }
+
+        // We need the digest, which we can obtain using '--getProperty'.
+        // Unfortunately, that leaves the user without any output of how the operation is progressing.
+        // To have some output, we first publish the project with console output.
+        StringBuilder stdout = new();
+
+        Console.WriteLine();
+        Console.WriteLine($"Building .NET project '{projectFile}'...");
+        int rv = await RunDotnetAsync(
+            new[] {
+                "publish",
+                projectFile
+            },
+            stdout: null, cancellationToken
+        );
+        if (rv != -0)
+        {
+            return null;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"Publishing application image to image registry...");
+        rv = await RunDotnetAsync(
+            new[] {
+                "publish",
+                "/p:PublishProfile=DefaultContainer",
+                $"/p:ContainerRegistry={registry}",
+                $"/p:ContainerRepository={repository}",
+                $"/p:ContainerImageTag={tag}",
+                $"/p:ContainerBaseImage={containerBaseImage}",
+                "--getProperty:GeneratedContainerDigest",
+                projectFile
+            },
+            stdout, cancellationToken
+        );
+
+        if (rv != -0)
+        {
+            return null;
+        }
+
+        string image = $"{registry}/{repository}@{stdout.ToString().Trim()}";
+        Console.WriteLine($"Succesfully pushed image '{image}'");
+
+        return image;
+    }
+
+    private async Task<int> RunDotnetAsync(IEnumerable<string> arguments, StringBuilder? stdout, CancellationToken cancellationToken)
+    {
+        Process process = new();
+        process.StartInfo.FileName = "dotnet";
+        process.StartInfo.RedirectStandardError = true;
+        process.StartInfo.RedirectStandardInput = true;
+        process.StartInfo.RedirectStandardOutput = true;
+
+        foreach (var arg in arguments)
+        {
+            process.StartInfo.ArgumentList.Add(arg);
+        }
+
+        foreach (var envvar in new[] {
+            "MSBuildExtensionsPath",
+            "MSBuildSDKsPath",
+            "MSBUILD_EXE_PATH",
+            "MSBuildLoadMicrosoftTargetsReadOnly",
+            "DOTNET_HOST_PATH"
+        })
+        {
+            process.StartInfo.EnvironmentVariables.Remove(envvar);
+        }
+
+        process.Start();
+
+        process.ErrorDataReceived += (sender, e) =>
+        {
+            if (e.Data is not null)
+            {
+                Console.WriteLine(e.Data);
+            }
+        };
+
+        process.OutputDataReceived += (sender, e) =>
+        {
+            if (e.Data is not null)
+            {
+                if (stdout is null)
+                {
+                    Console.WriteLine(e.Data);
+                }
+                else
+                {
+                    stdout?.AppendLine(e.Data);
+                }
+            }
+        };
+
+        process.StandardInput.Close();
+        process.BeginErrorReadLine();
+        process.BeginOutputReadLine();
+
+        await process.WaitForExitAsync(cancellationToken);
+
+        return process.ExitCode;
+    }
+
+    private async Task<string?> S2IBuildAsync(string projectFile, string contextDir, ProjectInformation projectInfo, string runtimeVersion, string binaryBuildConfigName, IOpenShiftClient client, ComponentResources resources, CancellationToken cancellationToken)
+    {
+        // Ensure the s2i image for the .NET version is defined.
+        ImageStream? s2iImageStream = await ApplyDotnetImageStreamTag(
+                                        client,
+                                        DotnetImageStreamName,
+                                        resources.DotnetImageStream,
+                                        runtimeVersion,
+                                        cancellationToken);
+
+        // Ensure the s2i image is resolved.
+        if (!await CheckImageTagAvailable(client, s2iImageStream, runtimeVersion, cancellationToken))
+        {
+            return null;
+        }
+
+        // Upload sources and start the build.
+        Console.WriteLine($"Uploading sources from directory '{contextDir}'...");
+        Build? build = await StartBuildAsync(client, binaryBuildConfigName, contextDir, projectFile,
+                                             projectInfo.ContainerEnvironmentVariables, cancellationToken);
+
+        // Follow the build.
+        string buildName = build.Metadata.Name;
+        build = await FollowBuildAsync(client, buildName, cancellationToken);
+        if (build is null)
+        {
+            Console.WriteErrorLine($"The build '{buildName}' is missing.");
+            return null;
+        }
+        Debug.Assert(build.IsBuildFinished());
+
+        // Report build fail/success.
+        if (!CheckBuildNotFailed(build, out string? appImage))
+        {
+            return null;
+        }
+        Debug.Assert(appImage is not null);
+        return appImage;
     }
 
     private bool CheckBuildNotFailed(Build build, out string? builtImage)
@@ -228,7 +376,7 @@ sealed partial class DeployHandler
 
     private async Task<ComponentResources> GetDeployedResources(IOpenShiftClient client,
         string name, string? binaryBuildConfigName, List<string> pvcNames, List<string> configMapNames,
-        string? runtime, CancellationToken cancellationToken)
+        CancellationToken cancellationToken)
     {
         Deployment? deployment = await client.GetDeploymentAsync(name, cancellationToken);
         BuildConfig? binaryBuildConfig = binaryBuildConfigName is null ? null : await client.GetBuildConfigAsync(binaryBuildConfigName, cancellationToken);
@@ -236,7 +384,8 @@ sealed partial class DeployHandler
         ImageStream? imageStream = await client.GetImageStreamAsync(name, cancellationToken);
         Route? route = await client.GetRouteAsync(name, cancellationToken);
         Service? service = await client.GetServiceAsync(name, cancellationToken);
-        ImageStream? s2iImageStream = runtime is null ? null : await client.GetImageStreamAsync(GetS2iImageStreamName(runtime), cancellationToken);
+        ImageStream? dotnetImageStream = await client.GetImageStreamAsync(DotnetImageStreamName, cancellationToken);
+        ImageStream? dotnetRuntimeImageStream = await client.GetImageStreamAsync(DotnetRuntimeImageStreamName, cancellationToken);
         Dictionary<string, PersistentVolumeClaim> pvcs = new();
         foreach (var pvcName in pvcNames)
         {
@@ -264,7 +413,8 @@ sealed partial class DeployHandler
             ImageStream = imageStream,
             Route = route,
             Service = service,
-            S2iImageStream = s2iImageStream,
+            DotnetImageStream = dotnetImageStream,
+            DotnetRuntimeImageStream = dotnetRuntimeImageStream,
             PersistentVolumeClaims = pvcs,
         };
     }
@@ -274,8 +424,6 @@ sealed partial class DeployHandler
 
     private static string GetResourceNameFor(string componentName, ConfMap confMap)
         => $"{componentName}-{confMap.Name}";
-
-    private static string GetS2iImageStreamName(string runtime) => runtime;
 
     private async Task<bool> TryFollowDeploymentAsync(IOpenShiftClient client, string deploymentName, string? builtImage, CancellationToken cancellationToken)
     {
@@ -628,46 +776,43 @@ sealed partial class DeployHandler
 
     private async Task UpdateBuildResourcesAsync(
                                             IOpenShiftClient client,
+                                            bool isS2iBuild,
                                             ComponentResources current,
                                             string name,
                                             string binaryBuildConfigName,
                                             string appImageStreamTagName,
-                                            string runtime, string runtimeVersion,
+                                            string runtimeVersion,
                                             string partOf,
                                             CancellationToken cancellationToken)
     {
         Dictionary<string, string> componentLabels = GetComponentLabels(partOf, name);
-        Dictionary<string, string> runtimeLabels = GetRuntimeLabels(runtime, runtimeVersion);
-
-        BuildConfig binaryBuildConfig = await ApplyBinaryBuildConfig(
-                                            client,
-                                            binaryBuildConfigName,
-                                            current.BinaryBuildConfig,
-                                            appImageStreamTagName,
-                                            s2iImageStreamTag: $"{GetS2iImageStreamName(runtime)}:{runtimeVersion}",
-                                            Merge(componentLabels, runtimeLabels),
-                                            cancellationToken);
-
-        Debug.Assert(runtime == ResourceLabelValues.DotnetRuntime);
-        ImageStream? s2iImageStream = await ApplyDotnetImageStreamTag(
-                                        client,
-                                        current.S2iImageStream,
-                                        runtimeVersion,
-                                        cancellationToken);
+        Dictionary<string, string> runtimeLabels = GetRuntimeLabels(runtimeVersion);
 
         ImageStream? imageStream = await ApplyAppImageStream(client,
                                   name,
                                   current.ImageStream,
                                   componentLabels,
                                   cancellationToken);
+
+        if (isS2iBuild || current.BinaryBuildConfig is not null)
+        {
+            await ApplyBinaryBuildConfig(
+                    client,
+                    binaryBuildConfigName,
+                    current.BinaryBuildConfig,
+                    appImageStreamTagName,
+                    s2iImageStreamTag: $"{DotnetImageStreamName}:{runtimeVersion}",
+                    Merge(componentLabels, runtimeLabels),
+                    cancellationToken);
+        }
     }
 
     private async Task<Route?> UpdateResourcesAsync(IOpenShiftClient client,
                                             ComponentResources current,
                                             string name,
-                                            string runtime, string runtimeVersion,
+                                            string runtimeVersion,
                                             string? gitUri, string? gitRef,
-                                            string? appImage, string? appImageStreamTagName,
+                                            string? appImage, string appImageStreamTagName,
                                             string partOf, bool expose,
                                             global::ContainerPort[] ports, global::ContainerPort? exposedPort,
                                             PersistentStorage[] claims,
@@ -676,7 +821,7 @@ sealed partial class DeployHandler
                                             CancellationToken cancellationToken)
     {
         Dictionary<string, string> componentLabels = GetComponentLabels(partOf, name);
-        Dictionary<string, string> runtimeLabels = GetRuntimeLabels(runtime, runtimeVersion);
+        Dictionary<string, string> runtimeLabels = GetRuntimeLabels(runtimeVersion);
         Dictionary<string, string> selectorLabels = GetSelectorLabels(name);
 
         Dictionary<string, PersistentVolumeClaim> pvcs = new();
@@ -774,11 +919,11 @@ sealed partial class DeployHandler
         return labels;
     }
 
-    private static Dictionary<string, string> GetRuntimeLabels(string runtime, string runtimeVersion)
+    private static Dictionary<string, string> GetRuntimeLabels(string runtimeVersion)
     {
         Dictionary<string, string> labels = new();
 
-        labels[ResourceLabels.Runtime] = runtime;
+        labels[ResourceLabels.Runtime] = ResourceLabelValues.DotnetRuntime;
 
         return labels;
     }
