@@ -114,11 +114,11 @@ The `reloadOnChange: true` argument causes the application to pick up changes ma
 
 ## Tekton
 
-The `dotnet-shift` Tekton Task takes similar arguments as the `dotnet shift deploy` command.
+The `dotnet-shift-deploy` Tekton Task takes similar arguments as the `dotnet shift deploy` command.
 
-To use the Tekton Task, add the .NET image streams and the `dotnet-shift` Tekton Task to your project.
+To use the Tekton Task, add the .NET image streams and the `dotnet-shift-deploy` Tekton Task to your project.
 
 ```
 oc apply -f https://raw.githubusercontent.com/redhat-developer/s2i-dotnetcore/main/dotnet_imagestreams.json
-oc apply -f https://raw.githubusercontent.com/tmds/dotnet-shift/main/tekton/dotnet-shift-task.yaml
+oc apply -f https://raw.githubusercontent.com/tmds/dotnet-shift/main/tekton/dotnet-shift-deploytask.yaml
 ```
