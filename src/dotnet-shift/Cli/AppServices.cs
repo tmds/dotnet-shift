@@ -20,7 +20,20 @@ sealed class AppServices
         IProjectReader? projectReader = null,
         IGitRepoReader? repoReader = null)
     {
-        Console = consoleSettings is not null ? AnsiConsole.Create(consoleSettings) : AnsiConsole.Console;
+        consoleSettings ??= new AnsiConsoleSettings();
+        bool isOutputRedirected = System.Console.IsOutputRedirected;
+        if (isOutputRedirected)
+        {
+            // Don't use ANSI escape sequences when output is redirected.
+            consoleSettings.Ansi = AnsiSupport.No;
+        }
+        Console = AnsiConsole.Create(consoleSettings);
+        if (isOutputRedirected)
+        {
+            // Don't wrap at 80 columns when output is redirected.
+            Console.Profile.Width = int.MaxValue / 2;
+        }
+
         Logger = logger ?? NullLogger.Instance;
         WorkingDirectory = workingDirectory ?? Directory.GetCurrentDirectory();
         KubeConfig = kubeConfig ?? new Kubectl.KubernetesConfigFile();
