@@ -120,5 +120,5 @@ To use the Tekton Task, add the .NET image streams and the `dotnet-shift-deploy`
 
 ```
 oc apply -f https://raw.githubusercontent.com/redhat-developer/s2i-dotnetcore/main/dotnet_imagestreams.json
-oc apply -f https://raw.githubusercontent.com/tmds/dotnet-shift/main/tekton/dotnet-shift-deploytask.yaml
+oc apply -f https://raw.githubusercontent.com/tmds/dotnet-shift/main/tekton/dotnet-shift-deploy-task.yaml
 ```
