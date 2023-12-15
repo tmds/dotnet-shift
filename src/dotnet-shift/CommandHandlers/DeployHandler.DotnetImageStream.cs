@@ -16,6 +16,13 @@ sealed partial class DeployHandler
     {
         Debug.Assert(previous is null || previous.Metadata.Name == imageStreamName);
 
+        // If a tag is defined for the version already, no-op.
+        if (previous is not null &&
+            previous.Spec.Tags.Any(t => t.Name == version))
+        {
+            return previous;
+        }
+
         string image = DetermineDotnetImageStreamImage(imageStreamName, version);
         ImageStream imageStream = CreateDotnetImageStream(imageStreamName, version, image);
 
@@ -136,11 +143,6 @@ sealed partial class DeployHandler
                         {
                             Kind = "DockerImage",
                             Name = containerImage
-                        },
-                        // Poll the s2i image registry for updates.
-                        ImportPolicy = new()
-                        {
-                            Scheduled = true
                         }
                     }
                 }

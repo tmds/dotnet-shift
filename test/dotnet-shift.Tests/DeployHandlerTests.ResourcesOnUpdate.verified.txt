@@ -116,9 +116,6 @@
             Kind: DockerImage,
             Name: registry.access.redhat.com/ubi8/dotnet-30:latest
           },
-          ImportPolicy: {
-            Scheduled: true
-          },
           Name: 3.0,
           ReferencePolicy: {
             Type: Local
