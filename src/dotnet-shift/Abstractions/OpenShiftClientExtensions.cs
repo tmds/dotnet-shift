@@ -72,29 +72,6 @@ static class OpenShiftClientExtensions
         } while (true);
     }
 
-    public static async Task<DeploymentConfig> ReplaceDeploymentConfigAsync(this IOpenShiftClient client, DeploymentConfig? previous, DeploymentConfig value, Action<DeploymentConfig, DeploymentConfig>? update, CancellationToken cancellationToken)
-    {
-        do
-        {
-            previous ??= await client.GetDeploymentConfigAsync(value.Metadata.Name, cancellationToken)
-                         ?? throw new OpenShiftClientException("Resource not found.", HttpStatusCode.NotFound);
-
-            update?.Invoke(previous, value);
-
-            value.Metadata.ResourceVersion = previous.Metadata.ResourceVersion;
-
-            try
-            {
-                return await client.ReplaceDeploymentConfigAsync(value, cancellationToken);
-            }
-            catch (OpenShiftClientException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.Conflict)
-            {
-                // The object was changed, we need to refresh our object (and its resource version).
-                previous = null;
-            }
-        } while (true);
-    }
-
     public static async Task<ImageStream> ReplaceImageStreamAsync(this IOpenShiftClient client, ImageStream? previous, ImageStream value, Action<ImageStream, ImageStream>? update, CancellationToken cancellationToken)
     {
         do

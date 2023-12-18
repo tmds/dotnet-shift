@@ -9,7 +9,7 @@ sealed partial class AppCommandLine
     public static class Options
     {
         private const string APP = nameof(APP);
-        private const string DEPLOYMENT = nameof(DEPLOYMENT);
+        private const string COMPONENT = nameof(COMPONENT);
         private const string CONTEXT = nameof(CONTEXT);
         private const string PROJECT = nameof(PROJECT);
         private const string NAMESPACE = nameof(NAMESPACE);
@@ -102,12 +102,12 @@ sealed partial class AppCommandLine
         public static readonly CliOption<string> DeploymentNameOption =
             new CliOption<string>("--name")
             {
-                Description = "Name the deployment",
-                HelpName = DEPLOYMENT
+                Description = "Name the component",
+                HelpName = COMPONENT
             };
 
-        public static readonly CliArgument<string> RequiredAppArgument =
-            new CliArgument<string>(APP)
+        public static readonly CliArgument<string> RequiredComponentArgument =
+            new CliArgument<string>(COMPONENT)
             { };
 
         public static readonly CliOption<string?> ContextOption =

@@ -19,8 +19,6 @@ static class OpenShiftDataModelHelpers
         => resource.Metadata.Name;
     public static string GetName(this BuildConfig resource)
         => resource.Metadata.Name;
-    public static string GetName(this DeploymentConfig resource)
-        => resource.Metadata.Name;
     public static string GetName(this Deployment resource)
         => resource.Metadata.Name;
     public static string GetName(this Service resource)

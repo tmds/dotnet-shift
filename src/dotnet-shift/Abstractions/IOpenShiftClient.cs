@@ -6,9 +6,6 @@ interface IOpenShiftClient : IDisposable
 
     Task<User> GetUserAsync(CancellationToken cancellationToken);
     Task<ProjectList> ListProjectsAsync(CancellationToken cancellationToken);
-    Task<DeploymentConfig?> GetDeploymentConfigAsync(string name, CancellationToken cancellationToken);
-    Task<DeploymentConfigList> ListDeploymentConfigsAsync(string labelSelector, CancellationToken cancellationToken);
-    Task DeleteDeploymentConfigAsync(string name, CancellationToken cancellationToken);
     Task<Deployment> CreateDeploymentAsync(Deployment deploymentConfig, CancellationToken cancellationToken);
     Task<Deployment> PatchDeploymentAsync(Deployment deploymentConfig, CancellationToken cancellationToken);
     Task<Deployment?> GetDeploymentAsync(string name, CancellationToken cancellationToken);
@@ -46,7 +43,6 @@ interface IOpenShiftClient : IDisposable
     Task<Deployment> ReplaceDeploymentAsync(Deployment value, CancellationToken cancellationToken);
     Task<BuildConfig> ReplaceBuildConfigAsync(BuildConfig value, CancellationToken cancellationToken);
     Task<ConfigMap> ReplaceConfigMapAsync(ConfigMap value, CancellationToken cancellationToken);
-    Task<DeploymentConfig> ReplaceDeploymentConfigAsync(DeploymentConfig value, CancellationToken cancellationToken);
     Task<ImageStream> ReplaceImageStreamAsync(ImageStream value, CancellationToken cancellationToken);
     Task<Route> ReplaceRouteAsync(Route value, CancellationToken cancellationToken);
     Task<Service> ReplaceServiceAsync(Service value, CancellationToken cancellationToken);
