@@ -112,6 +112,20 @@ builder.Configuration.AddJsonFile("/config/appsettings.json", optional: true, re
 
 The `reloadOnChange: true` argument causes the application to pick up changes made to the `ConfigMap` without requiring a restart.
 
+### Deployment trigger
+
+By default, when a new image is pushed to the .NET application ImageStream, the Kubernetes Deployment is updated automatically to use the new image.
+
+This behavior can be disabled by adding an `K8sEnableImageStreamTagDeploymentTrigger` property and setting it to `false`.
+
+By setting the property to `false`, the Deployment is update to use the new image in sync with other changes to the Deployment.
+
+**Example:**
+
+```xml
+<K8sEnableImageStreamTagDeploymentTrigger>false</K8sEnableImageStreamTagDeploymentTrigger>
+```
+
 ## Tekton
 
 The `dotnet-shift-deploy` Tekton Task takes similar arguments as the `dotnet shift deploy` command.

@@ -28,6 +28,7 @@ sealed class ProjectReader : IProjectReader
         ContainerPort[] containerPorts = ReadContainerPorts(project, environmentVariables, validationErrors);
         PersistentStorage[] volumeClaims = ReadVolumeClaims(project, validationErrors);
         ConfMap[] configMaps = ReadConfigMaps(project, validationErrors);
+        bool enableImageStreamTagDeploymentTrigger = ReadEnableImageStreamTagDeploymentTrigger(project, validationErrors);
 
         if (validationErrors.Count > 0)
         {
@@ -48,7 +49,8 @@ sealed class ProjectReader : IProjectReader
             ContainerPorts = containerPorts,
             ExposedPort = exposedPort,
             VolumeClaims = volumeClaims,
-            ConfigMaps = configMaps
+            ConfigMaps = configMaps,
+            EnableImageStreamTagDeploymentTrigger = enableImageStreamTagDeploymentTrigger
         };
 
         project.ProjectCollection.UnloadProject(project);
@@ -92,6 +94,16 @@ sealed class ProjectReader : IProjectReader
             }
         }
         return maps.ToArray();
+    }
+
+    private bool ReadEnableImageStreamTagDeploymentTrigger(Project project, List<string> validationErrors)
+    {
+        if (!TryGetPropertyAsBool(project, "K8sEnableImageStreamTagDeploymentTrigger", out bool? value))
+        {
+            validationErrors.Add($"K8sEnableImageStreamTagDeploymentTrigger must be 'true' or 'false'.");
+        }
+
+        return value ?? true;
     }
 
     private PersistentStorage[] ReadVolumeClaims(Project project, List<string> validationErrors)
@@ -179,6 +191,12 @@ sealed class ProjectReader : IProjectReader
         return project.AllEvaluatedProperties.FirstOrDefault(prop => prop.Name == name)?.EvaluatedValue;
     }
 
+    private static bool TryGetPropertyAsBool(Microsoft.Build.Evaluation.Project project, string name, out bool? value)
+    {
+        string? s = GetProperty(project, name);
+        return TryParseBool(s, out value);
+    }
+
     private static ProjectItem[] GetItems(Project project, string name)
     {
         return project.AllEvaluatedItems.Where(item => item.ItemType == name).ToArray();
@@ -192,6 +210,11 @@ sealed class ProjectReader : IProjectReader
     private static bool TryGetMetadataAsBool(ProjectItem item, string name, out bool? value)
     {
         string? s = GetMetadata(item, name);
+        return TryParseBool(s, out value);
+    }
+
+    private static bool TryParseBool(string? s, out bool? value)
+    {
         if (string.IsNullOrEmpty(s))
         {
             value = null;
