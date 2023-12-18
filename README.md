@@ -112,6 +112,42 @@ builder.Configuration.AddJsonFile("/config/appsettings.json", optional: true, re
 
 The `reloadOnChange: true` argument causes the application to pick up changes made to the `ConfigMap` without requiring a restart.
 
+### Probes
+
+Health, readiness and startup probes can be added through the project file. The probe path is required.
+Other configuration is optional. The port defaults to `http` and its value must match a container port name.
+
+**Example:**
+
+```xml
+<K8sLivenessPath>/healthz</K8sLivenessPath>
+[
+<K8sLivenessPort>http</K8sLivenessPort>
+<K8sLivenessInitialDelay>0</K8sLivenessInitialDelay>
+<K8sLivenessPeriod>10</K8sLivenessPeriod>
+<K8sLivenessTimeout>1</K8sLivenessTimeout>
+<K8sLivenessFailureThresholdCount>3</K8sLivenessFailureThresholdCount>
+]
+
+<K8sStartupPath>/startup-probe</K8sStartupPath>
+[
+<K8sStartupPort>http</K8sStartupPort>
+<K8sStartupInitialDelay>0</K8sStartupInitialDelay>
+<K8sStartupPeriod>10</K8sStartupPeriod>
+<K8sStartupTimeout>1</K8sStartupTimeout>
+<K8sStartupFailureThresholdCount>3</K8sStartupFailureThresholdCount>
+]
+
+<K8sReadinessPath>/readiness-probe</K8sReadinessPath>
+[
+<K8sReadinessPort>http</K8sReadinessPort>
+<K8sReadinessInitialDelay>0</K8sReadinessInitialDelay>
+<K8sReadinessPeriod>10</K8sReadinessPeriod>
+<K8sReadinessTimeout>1</K8sReadinessTimeout>
+<K8sReadinessFailureThresholdCount>3</K8sReadinessFailureThresholdCount>
+]
+```
+
 ### Deployment trigger
 
 By default, when a new image is pushed to the .NET application ImageStream, the Kubernetes Deployment is updated automatically to use the new image.
