@@ -114,6 +114,8 @@ sealed partial class DeployHandler
 
         string appImageStreamTagName = $"{name}:latest";
 
+        bool enableTrigger = projectInfo.EnableImageStreamTagDeploymentTrigger;
+
         // If we're running inside the cluster, build the image directly in the pod using the SDK.
         bool useS2iBuild = login.IsPodServiceAccount ? false: true;
 
@@ -122,6 +124,13 @@ sealed partial class DeployHandler
         {
             Console.WriteLine(); // section "build"
             Console.WriteLine("Updating build resources...");
+
+            // If the trigger was previously enabled and now disabled, we must disable it before doing a build.
+            if (!enableTrigger && resources.Deployment is not null && IsImageStreamDeploymentTriggerEnabled(resources.Deployment))
+            {
+                await DisableImageStreamDeploymentTriggerAsync(client, resources.Deployment, cancellationToken);
+            }
+
             await UpdateBuildResourcesAsync(client, useS2iBuild, resources, name, binaryBuildConfigName, appImageStreamTagName, runtimeVersion, partOf, cancellationToken);
             if (useS2iBuild)
             {
@@ -151,7 +160,8 @@ sealed partial class DeployHandler
                                     appImage, appImageStreamTagName,
                                     partOf, expose, projectInfo.ContainerPorts, projectInfo.ExposedPort,
                                     projectInfo.VolumeClaims, projectInfo.ConfigMaps,
-                                    projectInfo.ContainerLimits, cancellationToken);
+                                    projectInfo.ContainerLimits, enableTrigger,
+                                    cancellationToken);
 
         // Follow the deployment.
         if (follow)
@@ -818,6 +828,7 @@ sealed partial class DeployHandler
                                             PersistentStorage[] claims,
                                             ConfMap[] configMaps,
                                             ContainerResources containerResources,
+                                            bool enableTrigger,
                                             CancellationToken cancellationToken)
     {
         Dictionary<string, string> componentLabels = GetComponentLabels(partOf, name);
@@ -865,6 +876,7 @@ sealed partial class DeployHandler
                                         Merge(componentLabels, runtimeLabels),
                                         selectorLabels,
                                         containerResources,
+                                        enableTrigger,
                                         cancellationToken
                                     );
 

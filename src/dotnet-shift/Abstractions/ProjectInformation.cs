@@ -31,4 +31,5 @@ sealed record ProjectInformation
     public ContainerPort? ExposedPort { get; init; }
     public PersistentStorage[] VolumeClaims { get; init; }
     public ConfMap[] ConfigMaps { get; init; }
+    public bool EnableImageStreamTagDeploymentTrigger { get; init; }
 }

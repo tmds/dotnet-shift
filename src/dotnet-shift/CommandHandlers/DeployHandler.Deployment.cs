@@ -8,6 +8,7 @@ sealed partial class DeployHandler
 {
     // This is used to find back the application container on existing deployments. Do not change!
     private const string ContainerName = "app";
+    private const string TriggerFieldPath = $"spec.template.spec.containers[?(@.name==\"{ContainerName}\")].image";
 
     private async Task<Deployment> ApplyAppDeployment(
         IOpenShiftClient client,
@@ -21,6 +22,7 @@ sealed partial class DeployHandler
         Dictionary<string, string> labels,
         Dictionary<string, string> selectorLabels,
         ContainerResources containerLimits,
+        bool enableTrigger,
         CancellationToken cancellationToken)
     {
         Deployment deployment = CreateAppDeployment(
@@ -33,7 +35,8 @@ sealed partial class DeployHandler
             configMaps,
             labels,
             selectorLabels,
-            containerLimits);
+            containerLimits,
+            enableTrigger);
 
         if (previous is null)
         {
@@ -59,6 +62,67 @@ sealed partial class DeployHandler
     private static Container? FindAppContainer(List<Container> containers)
         => containers.FirstOrDefault(c => c.Name == ContainerName);
 
+    private bool IsImageStreamDeploymentTriggerEnabled(Deployment deployment)
+    {
+        List<DeploymentTrigger>? triggers = null;
+        if (deployment.Metadata.Annotations.TryGetValue(Annotations.OpenShiftTriggers, out string? triggersAnnotation))
+        {
+            triggers = JsonConvert.DeserializeObject<List<DeploymentTrigger>>(triggersAnnotation);
+        }
+        if (triggers is not null)
+        {
+            foreach (var trigger in triggers)
+            {
+                if (trigger.FieldPath == TriggerFieldPath && trigger.Paused != "true")
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private Task DisableImageStreamDeploymentTriggerAsync(IOpenShiftClient client, Deployment deployment, CancellationToken cancellationToken)
+    {
+        List<DeploymentTrigger>? triggers = null;
+        if (deployment.Metadata.Annotations.TryGetValue(Annotations.OpenShiftTriggers, out string? triggersAnnotation))
+        {
+            triggers = JsonConvert.DeserializeObject<List<DeploymentTrigger>>(triggersAnnotation);
+        }
+        bool triggerFound = false;
+        if (triggers is not null)
+        {
+            foreach (var trigger in triggers)
+            {
+                if (trigger.FieldPath == TriggerFieldPath && trigger.Paused != "true")
+                {
+                    triggerFound = true;
+                    trigger.Paused = "true";
+                }
+            }
+
+            if (triggerFound)
+            {
+                return client.PatchDeploymentAsync(new Deployment()
+                {
+                    ApiVersion = "apps/v1",
+                    Kind = "Deployment",
+                    Metadata = new()
+                    {
+                        Name = deployment.Metadata.Name,
+                        Annotations = new Dictionary<string, string>()
+                        {
+                            { Annotations.OpenShiftTriggers, Serialize(triggers) }
+                        }
+                    },
+                }, cancellationToken);
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
     private static Deployment CreateAppDeployment(
         string name,
         string? gitUri, string? gitRef,
@@ -68,12 +132,13 @@ sealed partial class DeployHandler
         ConfMap[] configMaps,
         Dictionary<string, string> labels,
         Dictionary<string, string> selectorLabels,
-        ContainerResources containerLimits)
+        ContainerResources containerLimits,
+        bool enableTrigger)
     {
         const string PvcPrefix = "pvc";
         const string ConfigMapPrefix = "cfg";
 
-        Dictionary<string, string> annotations = GetAppDeploymentAnnotations(gitUri, gitRef, appImageStreamTagName);
+        Dictionary<string, string> annotations = GetAppDeploymentAnnotations(gitUri, gitRef, appImageStreamTagName, enableTrigger);
 
         // If only a single mount is allowed, the previous pod must be down, so the new pod can attach.
         bool hasReadWriteOnceVolumes = claims.Any(c => c.Access == "ReadWriteOnce" || c.Access == "ReadWriteOncePod");
@@ -236,7 +301,7 @@ sealed partial class DeployHandler
         }).ToList();
     }
 
-    private static Dictionary<string, string> GetAppDeploymentAnnotations(string? gitUri, string? gitRef, string? appImageStreamTagName)
+    private static Dictionary<string, string> GetAppDeploymentAnnotations(string? gitUri, string? gitRef, string? appImageStreamTagName, bool enableTrigger)
     {
         Dictionary<string, string> annotations = new();
         if (appImageStreamTagName is not null)
@@ -253,9 +318,9 @@ sealed partial class DeployHandler
                                     Kind = "ImageStreamTag",
                                     Name = appImageStreamTagName
                                 },
-                                FieldPath = $"spec.template.spec.containers[?(@.name==\"{ContainerName}\")].image",
+                                FieldPath = TriggerFieldPath,
                                 // Set the trigger to Pause so changes to the deployment are deployed in sync with the image.
-                                Paused = "true"
+                                Paused = enableTrigger ? "false" : "true"
                             }
                     }
                 );
