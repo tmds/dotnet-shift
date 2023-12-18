@@ -33,7 +33,7 @@ $ dotnet shift deploy --expose /tmp/web
 
 ### Environment Variables
 
-`ContainerEnvironmentVariable` adds an environment variable in the container.
+`ContainerEnvironmentVariable` adds an environment variable in the container image.
 
 **Example:**
 
@@ -45,16 +45,16 @@ $ dotnet shift deploy --expose /tmp/web
 
 ### Resource Requirements
 
-The `ContainerCpuRequest`, `ContainerCpuLimit`, `ContainerMemoryRequest`, `ContainerMemoryLimit` properties can be used to configure cpu and memory requests and limits.
+The `K8sCpuRequest`, `K8sCpuLimit`, `K8sMemoryRequest`, `K8sMemoryLimit` properties can be used to configure cpu and memory requests and limits.
 
 **Example:**
 
 ```xml
 <PropertyGroup>
-  <ContainerCpuRequest>0.5</ContainerCpuRequest>
-  <ContainerCpuLimit>2</ContainerCpuLimit>
-  <ContainerMemoryRequest>100M</ContainerMemoryRequest>
-  <ContainerMemoryLimit>200M</ContainerMemoryLimit>
+  <K8sCpuRequest>0.5</K8sCpuRequest>
+  <K8sCpuLimit>2</K8sCpuLimit>
+  <K8sMemoryRequest>100M</K8sMemoryRequest>
+  <K8sMemoryLimit>200M</K8sMemoryLimit>
 </PropertyGroup>
 ```
 
@@ -80,7 +80,7 @@ The default value for an `ASPNETCORE_URLS` port `Name` is its scheme (e.g. `http
 
 ### Persistent Storage
 
-Persistent volume claims can be configured using `ContainerPersistentStorage`.
+Persistent volume claims can be configured using `K8sPersistentStorage`.
 
 `Access` can be set to `ReadWriteOnce`, `ReadOnlyMany`, `ReadWriteMany`, `ReadWriteOncePod`.
 The default is `ReadWriteOnce`. When `Access` is `ReadWriteOnce` or `ReadWriteOncePod` the deployment will use the recreate strategy to ensure the previous pod is terminated so the new pod can attach.
@@ -88,18 +88,18 @@ The default is `ReadWriteOnce`. When `Access` is `ReadWriteOnce` or `ReadWriteOn
 **Example:**
 
 ```xml
-<ContainerPersistentStorage Include="data" Size="300Mi" Path="/data"
+<K8sPersistentStorage Include="data" Size="300Mi" Path="/data"
                             [ Limit="1Gi" StorageClass="myclass" Access="ReadWriteMany" ]/>
 ```
 
 ### ConfigMap
 
-Config maps can be configured using `ContainerConfigMap`.
+Config maps can be configured using `K8sConfigMap`.
 
 **Example:**
 
 ```xml
-<ContainerConfigMap Include="config" Path="/config"
+<K8sConfigMap Include="config" Path="/config"
                     [ ReadOnly="true" ]/>
 ```
 
