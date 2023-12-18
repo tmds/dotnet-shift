@@ -160,7 +160,9 @@ sealed partial class DeployHandler
                                     appImage, appImageStreamTagName,
                                     partOf, expose, projectInfo.ContainerPorts, projectInfo.ExposedPort,
                                     projectInfo.VolumeClaims, projectInfo.ConfigMaps,
-                                    projectInfo.ContainerLimits, enableTrigger,
+                                    projectInfo.ContainerLimits,
+                                    projectInfo.LivenessProbe, projectInfo.ReadinessProbe, projectInfo.StartupProbe,
+                                    enableTrigger,
                                     cancellationToken);
 
         // Follow the deployment.
@@ -828,6 +830,7 @@ sealed partial class DeployHandler
                                             PersistentStorage[] claims,
                                             ConfMap[] configMaps,
                                             ContainerResources containerResources,
+                                            HttpGetProbe? livenessProbe, HttpGetProbe? readinessProbe, HttpGetProbe? startupProbe,
                                             bool enableTrigger,
                                             CancellationToken cancellationToken)
     {
@@ -877,6 +880,7 @@ sealed partial class DeployHandler
                                         selectorLabels,
                                         containerResources,
                                         enableTrigger,
+                                        livenessProbe, readinessProbe, startupProbe,
                                         cancellationToken
                                     );
 

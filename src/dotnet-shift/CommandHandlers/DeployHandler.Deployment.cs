@@ -23,6 +23,7 @@ sealed partial class DeployHandler
         Dictionary<string, string> selectorLabels,
         ContainerResources containerLimits,
         bool enableTrigger,
+        HttpGetProbe? livenessProbe, HttpGetProbe? readinessProbe, HttpGetProbe? startupProbe,
         CancellationToken cancellationToken)
     {
         Deployment deployment = CreateAppDeployment(
@@ -36,6 +37,7 @@ sealed partial class DeployHandler
             labels,
             selectorLabels,
             containerLimits,
+            livenessProbe, readinessProbe, startupProbe,
             enableTrigger);
 
         if (previous is null)
@@ -133,6 +135,7 @@ sealed partial class DeployHandler
         Dictionary<string, string> labels,
         Dictionary<string, string> selectorLabels,
         ContainerResources containerLimits,
+        HttpGetProbe? livenessProbe, HttpGetProbe? readinessProbe, HttpGetProbe? startupProbe,
         bool enableTrigger)
     {
         const string PvcPrefix = "pvc";
@@ -182,13 +185,37 @@ sealed partial class DeployHandler
                                 Image = appImage,
                                 Ports = CreateContainerPorts(ports),
                                 VolumeMounts = CreateVolumeMounts(claims, configMaps),
-                                Resources = CreateResourceRequirements(containerLimits)
+                                Resources = CreateResourceRequirements(containerLimits),
+                                LivenessProbe = CreateProbe(livenessProbe),
+                                ReadinessProbe = CreateProbe(readinessProbe),
+                                StartupProbe = CreateProbe(startupProbe),
                             }
                         }
                     }
                 }
             }
         };
+
+        static Probe2? CreateProbe(HttpGetProbe? probe)
+        {
+            if (probe is null)
+            {
+                return null;
+            }
+
+            return new Probe2()
+            {
+                FailureThreshold = probe.FailureThresholdCount,
+                InitialDelaySeconds = probe.InitialDelay,
+                PeriodSeconds = probe.Period,
+                TimeoutSeconds = probe.Timeout,
+                HttpGet = new HTTPGetAction()
+                {
+                    Port = probe.Port,
+                    Path = probe.Path
+                }
+            };
+        }
 
         static ResourceRequirements? CreateResourceRequirements(ContainerResources containerLimits)
         {

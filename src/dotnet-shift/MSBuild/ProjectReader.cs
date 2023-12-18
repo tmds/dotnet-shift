@@ -29,6 +29,9 @@ sealed class ProjectReader : IProjectReader
         PersistentStorage[] volumeClaims = ReadVolumeClaims(project, validationErrors);
         ConfMap[] configMaps = ReadConfigMaps(project, validationErrors);
         bool enableImageStreamTagDeploymentTrigger = ReadEnableImageStreamTagDeploymentTrigger(project, validationErrors);
+        HttpGetProbe? livenessProbe = ReadProbe(project, containerPorts, "Liveness", validationErrors);
+        HttpGetProbe? readinessProbe = ReadProbe(project, containerPorts, "Readiness", validationErrors);
+        HttpGetProbe? startupProbe = ReadProbe(project, containerPorts, "Startup", validationErrors);
 
         if (validationErrors.Count > 0)
         {
@@ -50,12 +53,64 @@ sealed class ProjectReader : IProjectReader
             ExposedPort = exposedPort,
             VolumeClaims = volumeClaims,
             ConfigMaps = configMaps,
-            EnableImageStreamTagDeploymentTrigger = enableImageStreamTagDeploymentTrigger
+            EnableImageStreamTagDeploymentTrigger = enableImageStreamTagDeploymentTrigger,
+            LivenessProbe = livenessProbe,
+            ReadinessProbe = readinessProbe,
+            StartupProbe = startupProbe,
         };
 
         project.ProjectCollection.UnloadProject(project);
 
         return true;
+    }
+
+    private HttpGetProbe? ReadProbe(Project project, ContainerPort[] containerPorts, string probeName, List<string> validationErrors)
+    {
+        string? path = GetProperty(project, $"K8s{probeName}Path");
+        string? port = GetProperty(project, $"K8s{probeName}Port");
+
+        if (!TryGetPropertyAsInt(project, $"K8s{probeName}InitialDelay", out int? initialDelay))
+        {
+            validationErrors.Add($"K8s{probeName}InitialDelay is not an integer.");
+        }
+        if (!TryGetPropertyAsInt(project, $"K8s{probeName}Period", out int? period))
+        {
+            validationErrors.Add($"K8s{probeName}Period is not an integer.");
+        }
+        if (!TryGetPropertyAsInt(project, $"K8s{probeName}Timeout", out int? timeout))
+        {
+            validationErrors.Add($"K8s{probeName}Timeout is not an integer.");
+        }
+        if (!TryGetPropertyAsInt(project, $"K8s{probeName}FailureThresholdCount", out int? failureThresholdCount))
+        {
+            validationErrors.Add($"K8s{probeName}FailureThresholdCount is not an integer.");
+        }
+        if (path is null &&
+            (port is not null || initialDelay.HasValue || period.HasValue || timeout.HasValue || failureThresholdCount.HasValue))
+        {
+            validationErrors.Add($"K8s{probeName}Path is required to enable the probe.");
+        }
+        if (path is not null)
+        {
+            port ??= "http";
+            if (!containerPorts.Any(p => p.Name == port))
+            {
+                validationErrors.Add($"There is no port '{port}' defined for the '{probeName}' probe.");
+            }
+            else
+            {
+                return new HttpGetProbe()
+                {
+                    Path = path,
+                    Port = port,
+                    InitialDelay = initialDelay,
+                    Period = period,
+                    Timeout = timeout,
+                    FailureThresholdCount = failureThresholdCount
+                };
+            }
+        }
+        return null;
     }
 
     private ConfMap[] ReadConfigMaps(Project project, List<string> validationErrors)
@@ -195,6 +250,19 @@ sealed class ProjectReader : IProjectReader
     {
         string? s = GetProperty(project, name);
         return TryParseBool(s, out value);
+    }
+
+    private static bool TryGetPropertyAsInt(Microsoft.Build.Evaluation.Project project, string name, out int? value)
+    {
+        string? s = GetProperty(project, name);
+        if (s is null)
+        {
+            value = null;
+            return true;
+        }
+        bool rv = int.TryParse(s, out int intValue);
+        value = rv ? intValue : null;
+        return rv;
     }
 
     private static ProjectItem[] GetItems(Project project, string name)

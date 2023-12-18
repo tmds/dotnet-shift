@@ -32,4 +32,18 @@ sealed record ProjectInformation
     public PersistentStorage[] VolumeClaims { get; init; }
     public ConfMap[] ConfigMaps { get; init; }
     public bool EnableImageStreamTagDeploymentTrigger { get; init; }
+
+    public HttpGetProbe? LivenessProbe { get; init; }
+    public HttpGetProbe? ReadinessProbe { get; init; }
+    public HttpGetProbe? StartupProbe { get; init; }
+}
+
+sealed record HttpGetProbe
+{
+    public required string Path { get; init; }
+    public required string Port { get; set; }
+    public int? InitialDelay { get;  set; }
+    public int? Period { get; set; }
+    public int? Timeout { get; set; }
+    public int? FailureThresholdCount { get; set; }
 }
