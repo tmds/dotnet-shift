@@ -3,9 +3,8 @@ namespace CommandHandlers;
 using System;
 using System.IO.Pipelines;
 using System.IO.Enumeration;
-#if NET6_0
 using System.IO.Compression;
-#else
+#if NET7_0
 using System.Formats.Tar;
 #endif
 using System.Runtime.InteropServices;
@@ -218,13 +217,21 @@ sealed partial class DeployHandler
 
             static async void StreamToPipeWriter(Stream stream, PipeWriter writer)
             {
+                using GZipStream gzStream = new GZipStream(writer.AsStream(leaveOpen: true), CompressionMode.Compress);
                 try
                 {
-                    await stream.CopyToAsync(writer.AsStream(leaveOpen: true));
+                    await stream.CopyToAsync(gzStream);
+                    gzStream.Close();
                     writer.Complete();
                 }
                 catch (Exception ex)
                 {
+                    try
+                    {
+                        gzStream.Close();
+                    }
+                    catch
+                    { }
                     writer.Complete(ex);
                 }
             }
