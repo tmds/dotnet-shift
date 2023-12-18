@@ -791,7 +791,7 @@ sealed partial class DeployHandler
         ImageStream? imageStream = await ApplyAppImageStream(client,
                                   name,
                                   current.ImageStream,
-                                  componentLabels,
+                                  Merge(componentLabels, runtimeLabels),
                                   cancellationToken);
 
         if (isS2iBuild || current.BinaryBuildConfig is not null)
