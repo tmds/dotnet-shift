@@ -133,7 +133,8 @@
         app.kubernetes.io/instance: myapp,
         app.kubernetes.io/managed-by: dotnet-shift,
         app.kubernetes.io/name: mycomponent,
-        app.kubernetes.io/part-of: myapp
+        app.kubernetes.io/part-of: myapp,
+        app.openshift.io/runtime: dotnet
       },
       Name: mycomponent
     }

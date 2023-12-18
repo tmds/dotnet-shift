@@ -1,7 +1,5 @@
 namespace CommandHandlers;
 
-using System;
-using Newtonsoft.Json;
 using OpenShift;
 
 sealed partial class ListHandler
@@ -21,138 +19,119 @@ sealed partial class ListHandler
     {
         using IOpenShiftClient client = OpenShiftClientFactory.CreateClient(login);
 
-        List<Item> items = await GetItemsAsync(client, cancellationToken);
+        List<Component> items = await GetItemsAsync(client, cancellationToken);
 
         PrintItems(items);
 
         return CommandResult.Success;
     }
 
-    private async Task<List<Item>> GetItemsAsync(IOpenShiftClient client, CancellationToken cancellationToken)
+    private async Task<HashSet<string>> FindDotnetComponentsAsync(IOpenShiftClient client, CancellationToken cancellationToken)
     {
-        string selector = $"{ResourceLabels.Runtime}={ResourceLabelValues.DotnetRuntime},{ResourceLabels.PartOf}";
+        // Find .NET components by looking for ImageStreams, Deployments and BuildConfigs that have 'app.openshift.io/runtime' set to 'dotnet'.
+        HashSet<string> names = new();
 
-        List<Item> items = await FindDotnetDeploymentsAsync(client, cancellationToken);
-        Dictionary<(string type, string name), List<BuildConfig>> buildConfigs = await FindDotnetBuildConfigsAsync(client, cancellationToken);
-        AddBuildConfigsToItems(items, buildConfigs);
+        string selector = $"{ResourceLabels.Runtime}={ResourceLabelValues.DotnetRuntime},{ResourceLabels.Name}";
 
-        ServiceList services = await client.ListServicesAsync(null, cancellationToken);
-        AddServicesToItems(items, services);
-
-        RouteList routes = await client.ListRoutesAsync(null, cancellationToken);
-        AddRoutesToItems(items, routes);
-
-        PersistentVolumeClaimList pvcs = await client.ListPersistentVolumeClaimsAsync($"{ResourceLabels.PartOf}", cancellationToken);
-        AddPvcsToItems(items, pvcs, out List<PersistentVolumeClaim> unusedPvcs);
-
-        ConfigMapList configMaps = await client.ListConfigMapsAsync($"{ResourceLabels.PartOf}", cancellationToken);
-        AddConfigMapsToItems(items, configMaps, out List<ConfigMap> unusedConfigMaps);
-
-        await AddPodsToItemsAsync(client, items, cancellationToken);
-
-        List<BuildConfig> unusedBuildConfigs = GetUnusedBuildConfigs(items, buildConfigs);
-        foreach (var bc in unusedBuildConfigs)
+        var deploymentsList = await client.ListDeploymentsAsync(selector, cancellationToken);
+        foreach (var item in deploymentsList.Items)
         {
-            items.Add(new Item()
-            {
-                App = bc.Metadata.Labels[ResourceLabels.PartOf],
-                BuildConfigs = { bc }
-            });
+            names.Add(item.Metadata.Labels[ResourceLabels.Name]);
         }
 
-        foreach (var pvc in unusedPvcs)
+        var imageStreamsList = await client.ListImageStreamsAsync(selector, cancellationToken);
+        foreach (var item in imageStreamsList.Items)
         {
-            items.Add(new Item()
-            {
-                App = pvc.Metadata.Labels[ResourceLabels.PartOf],
-                Pvcs = { pvc }
-            });
+            names.Add(item.Metadata.Labels[ResourceLabels.Name]);
         }
 
-        foreach (var configMap in unusedConfigMaps)
+        var buildConfigsList = await client.ListBuildConfigsAsync(selector, cancellationToken);
+        foreach (var item in buildConfigsList.Items)
         {
-            items.Add(new Item()
-            {
-                App = configMap.Metadata.Labels[ResourceLabels.PartOf],
-                ConfigMaps = { configMap }
-            });
+            names.Add(item.Metadata.Labels[ResourceLabels.Name]);
         }
 
-        return items;
+        return names;
     }
 
-    private void AddConfigMapsToItems(List<Item> items, ConfigMapList configMaps, out List<ConfigMap> unusedConfigMaps)
+    private async Task<List<Component>> GetItemsAsync(IOpenShiftClient client, CancellationToken cancellationToken)
     {
-        unusedConfigMaps = new(configMaps.Items);
-        foreach (var configMap in configMaps.Items)
+        HashSet<string> componentNames = await FindDotnetComponentsAsync(client, cancellationToken);
+
+        Dictionary<string, Component> components = new(componentNames.Select(name => KeyValuePair.Create(name, new Component() { Name = name })));
+
+        string selector = $"{ResourceLabels.Name} in ({string.Join(", ", componentNames)})";
+        var deploymentsList = await client.ListDeploymentsAsync(selector, cancellationToken);
+        foreach (var item in deploymentsList.Items)
         {
-            foreach (var item in items)
+            components[item.Metadata.Labels[ResourceLabels.Name]].Deployments.Add(item);
+        }
+        var imageStreamsList = await client.ListImageStreamsAsync(selector, cancellationToken);
+        foreach (var item in imageStreamsList.Items)
+        {
+            components[item.Metadata.Labels[ResourceLabels.Name]].ImageStreams.Add(item);
+        }
+        var buildConfigsList = await client.ListBuildConfigsAsync(selector, cancellationToken);
+        foreach (var item in buildConfigsList.Items)
+        {
+            components[item.Metadata.Labels[ResourceLabels.Name]].BuildConfigs.Add(item);
+        }
+        var pvcList = await client.ListPersistentVolumeClaimsAsync(selector, cancellationToken);
+        foreach (var item in pvcList.Items)
+        {
+            components[item.Metadata.Labels[ResourceLabels.Name]].Pvcs.Add(item);
+        }
+        var configMapList = await client.ListConfigMapsAsync(selector, cancellationToken);
+        foreach (var item in configMapList.Items)
+        {
+            components[item.Metadata.Labels[ResourceLabels.Name]].ConfigMaps.Add(item);
+        }
+        var servicesList = await client.ListServicesAsync(selector, cancellationToken);
+        foreach (var item in servicesList.Items)
+        {
+            components[item.Metadata.Labels[ResourceLabels.Name]].Services.Add(item);
+        }
+        var routesList = await client.ListRoutesAsync(selector, cancellationToken);
+        foreach (var item in routesList.Items)
+        {
+            components[item.Metadata.Labels[ResourceLabels.Name]].Routes.Add(item);
+        }
+
+        foreach (var component in components.Values)
+        {
+            foreach (var deployment in component.Deployments)
             {
-                bool deploymentUsesConfigMap =
-                    (item.Deployment is not null && item.Deployment.Spec.Template.Spec.Volumes?.Any(v => v.ConfigMap?.Name == configMap.Metadata.Name) == true) ||
-                    (item.DeploymentConfig is not null && item.DeploymentConfig.Spec.Template.Spec.Volumes?.Any(v => v.ConfigMap?.Name == configMap.Metadata.Name) == true);
-                if (deploymentUsesConfigMap)
+                IDictionary<string, string>? podLabels = deployment.Spec.Template.Metadata.Labels;
+                if (podLabels is null)
                 {
-                    item.ConfigMaps.Add(configMap);
-                    if (configMap.Metadata.Labels.TryGetValue(ResourceLabels.PartOf, out string? partOf) && partOf == item.App)
-                    {
-                        unusedConfigMaps.Remove(configMap);
-                    }
+                    continue;
                 }
-            }
-        }
-    }
 
-    private void AddPvcsToItems(List<Item> items, PersistentVolumeClaimList pvcs, out List<PersistentVolumeClaim> unusedPvcs)
-    {
-        unusedPvcs = new(pvcs.Items);
-        foreach (var pvc in pvcs.Items)
-        {
-            foreach (var item in items)
-            {
-                bool deploymentUsesPvc =
-                    (item.Deployment is not null && item.Deployment.Spec.Template.Spec.Volumes?.Any(v => v.PersistentVolumeClaim?.ClaimName == pvc.Metadata.Name) == true) ||
-                    (item.DeploymentConfig is not null && item.DeploymentConfig.Spec.Template.Spec.Volumes?.Any(v => v.PersistentVolumeClaim?.ClaimName == pvc.Metadata.Name) == true);
-                if (deploymentUsesPvc)
+                string podSelector = GetPodSelector(podLabels);
+                PodList podList = await client.ListPodsAsync(podSelector, cancellationToken);
+                foreach (var item in podList.Items)
                 {
-                    item.Pvcs.Add(pvc);
-                    if (pvc.Metadata.Labels.TryGetValue(ResourceLabels.PartOf, out string? partOf) && partOf == item.App)
-                    {
-                        unusedPvcs.Remove(pvc);
-                    }
+                    component.Pods.Add(item);
                 }
-            }
-        }
-    }
-
-    private static List<BuildConfig> GetUnusedBuildConfigs(List<Item> items, Dictionary<(string type, string name), List<BuildConfig>> buildConfigs)
-    {
-        List<BuildConfig> unusedBuildConfigs = buildConfigs.Values.SelectMany(v => v).ToList();
-
-        // Remove all build configs that are used.
-        foreach (var item in items)
-        {
-            foreach (var bc in item.BuildConfigs)
-            {
-                unusedBuildConfigs.Remove(bc);
-            }
+            }            
         }
 
-        return unusedBuildConfigs;
+        return components.Values.ToList();
     }
 
-    private void PrintItems(List<Item> items)
+    private void PrintItems(List<Component> items)
     {
         // Sort.
         foreach (var item in items)
         {
+            item.Deployments.Sort((lhs, rhs) => lhs.GetName().CompareTo(rhs.GetName()));
             item.BuildConfigs.Sort((lhs, rhs) => lhs.GetName().CompareTo(rhs.GetName()));
             item.Services.Sort((lhs, rhs) => lhs.GetName().CompareTo(rhs.GetName()));
             item.Routes.Sort((lhs, rhs) => lhs.GetName().CompareTo(rhs.GetName()));
             item.Pods.Sort((lhs, rhs) => lhs.GetName().CompareTo(rhs.GetName()));
         }
-        items.Sort((lhs, rhs) => (lhs.App, GetDeploymentName(lhs), lhs.BuildConfigs.FirstOrDefault()?.GetName())
-                                .CompareTo((rhs.App, GetDeploymentName(rhs), rhs.BuildConfigs.FirstOrDefault()?.GetName())));
+        items.Sort((lhs, rhs) => (lhs.Name, lhs.Deployments.FirstOrDefault()?.GetName(), lhs.BuildConfigs.FirstOrDefault()?.GetName())
+                                .CompareTo((rhs.Name, lhs.Deployments.FirstOrDefault()?.GetName(), rhs.BuildConfigs.FirstOrDefault()?.GetName())));
 
         // Format.
         var grid = new Grid();
@@ -165,7 +144,7 @@ sealed partial class ListHandler
         grid.AddColumn();
         grid.AddColumn();
         grid.AddRow(new[]{
-            "APP",
+            "COMPONENT",
             "DEPLOYMENT",
             "BUILD",
             "PVC",
@@ -174,12 +153,11 @@ sealed partial class ListHandler
             "ROUTE",
             "POD",
         });
-        string? previousApp = null;
         foreach (var item in items)
         {
             grid.AddRow(new[]{
-                item.App is null ? "(none)" : item.App == previousApp ? "" : item.App,
-                FormatDeployment(item),
+                item.Name,
+                string.Join("\n", item.Deployments.Select(FormatDeployment)),
                 string.Join("\n", item.BuildConfigs.Select(FormatBuild)),
                 string.Join("\n", item.Pvcs.Select(FormatPvc)),
                 string.Join("\n", item.ConfigMaps.Select(FormatConfigMap)),
@@ -187,33 +165,13 @@ sealed partial class ListHandler
                 string.Join("\n", item.Routes.Select(FormatRoute)),
                 string.Join("\n", item.Pods.Select(FormatPod)),
             });
-            previousApp = item.App;
         }
 
         // Write.
         Console.Write(grid);
 
-        static string FormatDeployment(Item item)
-        {
-            if (item.Deployment is { } deployment)
-            {
-                string name = deployment.Metadata.Name;
-                int replicas = deployment.Status.Replicas ?? 0;
-                int readyReplicas = deployment.Status.ReadyReplicas ?? 0;
-                return $"{name} ({readyReplicas}/{replicas})";
-            }
-            else if (item.DeploymentConfig is { } deploymentConfig)
-            {
-                string name = deploymentConfig.Metadata.Name;
-                int replicas = deploymentConfig.Status.Replicas;
-                int readyReplicas = deploymentConfig.Status.ReadyReplicas ?? 0;
-                return $"dc/{name} ({readyReplicas}/{replicas})";
-            }
-            else
-            {
-                return "(none)";
-            }
-        }
+        static string FormatDeployment(Deployment deployment)
+            => deployment.GetName();
 
         static string FormatBuild(BuildConfig build)
             => build.GetName();
@@ -238,192 +196,6 @@ sealed partial class ListHandler
         }
     }
 
-    private async Task AddPodsToItemsAsync(IOpenShiftClient client, List<Item> items, CancellationToken cancellationToken)
-    {
-        foreach (var item in items)
-        {
-            IDictionary<string, string>? podLabels = GetPodLabels(item);
-            if (podLabels is null)
-            {
-                continue;
-            }
-
-            string podSelector = GetPodSelector(podLabels);
-            PodList pods = await client.ListPodsAsync(podSelector, cancellationToken);
-            foreach (var pod in pods.Items)
-            {
-                item.Pods.Add(pod);
-            }
-        }
-    }
-
-    private static void AddRoutesToItems(List<Item> items, RouteList routes)
-    {
-        foreach (var route in routes.Items)
-        {
-            if (route.Spec.To.Kind != "Service")
-            {
-                continue;
-            }
-            string routeServiceName = route.Spec.To.Name;
-            foreach (var item in items)
-            {
-                bool routeUsesService = item.Services.Any(s => s.Metadata.Name == routeServiceName);
-                if (routeUsesService)
-                {
-                    item.Routes.Add(route);
-                }
-            }
-        }
-    }
-
-    private static void AddServicesToItems(List<Item> items, ServiceList services)
-    {
-        foreach (var service in services.Items)
-        {
-            foreach (var item in items)
-            {
-                IDictionary<string, string>? podLabels = GetPodLabels(item);
-                bool podTemplateMatchService = IsSubsetOf(service.Spec.Selector, podLabels);
-                if (podTemplateMatchService)
-                {
-                    item.Services.Add(service);
-                }
-            }
-        }
-    }
-
-    private void AddBuildConfigsToItems(List<Item> items, Dictionary<(string type, string name), List<BuildConfig>> buildConfigs)
-    {
-        foreach (var item in items)
-        {
-            HashSet<BuildConfig> itemBuildConfigs = new();
-
-            if (item.Deployment is not null)
-            {
-                List<DeploymentTrigger>? triggers = null;
-                if (item.Deployment.Metadata.Annotations.TryGetValue(Annotations.OpenShiftTriggers, out string? triggersAnnotation))
-                {
-                    triggers = JsonConvert.DeserializeObject<List<DeploymentTrigger>>(triggersAnnotation);
-                }
-                if (triggers is not null)
-                {
-                    foreach (var trigger in triggers)
-                    {
-                        if (trigger.FieldPath.StartsWith("spec.template.spec.containers") && trigger.FieldPath.EndsWith(".image"))
-                        {
-                            if (buildConfigs.TryGetValue((trigger.From.Kind, trigger.From.Name), out List<BuildConfig>? buildConfig))
-                            {
-                                AddRange(itemBuildConfigs, buildConfig);
-                            }
-                        }
-                    }
-                }
-                foreach (var container in item.Deployment.Spec.Template.Spec.Containers)
-                {
-                    if (buildConfigs.TryGetValue(("DockerImage", container.Image), out List<BuildConfig>? buildConfig) ||
-                        buildConfigs.TryGetValue(("ImageStreamTag", container.Image), out buildConfig))
-                    {
-                        AddRange(itemBuildConfigs, buildConfig);
-                    }
-                }
-            }
-            else if (item.DeploymentConfig is not null)
-            {
-                foreach (var container in item.DeploymentConfig.Spec.Template.Spec.Containers)
-                {
-                    if (buildConfigs.TryGetValue(("DockerImage", container.Image), out List<BuildConfig>? buildConfig) ||
-                        buildConfigs.TryGetValue(("ImageStreamTag", container.Image), out buildConfig))
-                    {
-                        AddRange(itemBuildConfigs, buildConfig);
-                    }
-                    else
-                    {
-                        foreach (var trigger in item.DeploymentConfig.Spec.Triggers)
-                        {
-                            if (trigger.Type == "ImageChange" && trigger.ImageChangeParams.ContainerNames.Contains(container.Name))
-                            {
-                                if (buildConfigs.TryGetValue((trigger.ImageChangeParams.From.Kind, trigger.ImageChangeParams.From.Name), out buildConfig))
-                                {
-                                    AddRange(itemBuildConfigs, buildConfig);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            item.BuildConfigs.AddRange(itemBuildConfigs);
-        }
-
-        static void AddRange(HashSet<BuildConfig> itemBuildConfigs, List<BuildConfig> buildConfigs)
-        {
-            foreach (var bc in buildConfigs)
-            {
-                itemBuildConfigs.Add(bc);
-            }
-        }
-    }
-
-    private static async Task<Dictionary<(string kind, string name), List<BuildConfig>>> FindDotnetBuildConfigsAsync(IOpenShiftClient client, CancellationToken cancellationToken)
-    {
-        Dictionary<(string type, string name), List<BuildConfig>> buildConfigs = new();
-
-        string selector = $"{ResourceLabels.Runtime}={ResourceLabelValues.DotnetRuntime},{ResourceLabels.PartOf}";
-
-        var buildConfigsList = await client.ListBuildConfigsAsync(selector, cancellationToken);
-        foreach (var buildConfig in buildConfigsList.Items)
-        {
-            var key = (buildConfig.Spec.Output.To.Kind, buildConfig.Spec.Output.To.Name);
-
-            if (buildConfigs.TryGetValue(key, out var value))
-            {
-                value.Add(buildConfig);
-            }
-            else
-            {
-                buildConfigs.Add((buildConfig.Spec.Output.To.Kind, buildConfig.Spec.Output.To.Name), new() { buildConfig });
-            }
-        }
-
-        return buildConfigs;
-    }
-
-    private static async Task<List<Item>> FindDotnetDeploymentsAsync(IOpenShiftClient client, CancellationToken cancellationToken)
-    {
-        List<Item> items = new();
-
-        string selector = $"{ResourceLabels.Runtime}={ResourceLabelValues.DotnetRuntime},{ResourceLabels.PartOf}";
-
-        var deploymentConfigsList = await client.ListDeploymentConfigsAsync(selector, cancellationToken);
-        foreach (var deploymentConfig in deploymentConfigsList.Items)
-        {
-            items.Add(new Item()
-            {
-                App = deploymentConfig.Metadata.Labels[ResourceLabels.PartOf],
-                DeploymentConfig = deploymentConfig
-            });
-        }
-
-        var deploymentsList = await client.ListDeploymentsAsync(selector, cancellationToken);
-        foreach (var deployment in deploymentsList.Items)
-        {
-            items.Add(new Item()
-            {
-                App = deployment.Metadata.Labels[ResourceLabels.PartOf],
-                Deployment = deployment
-            });
-        }
-
-        return items;
-    }
-
-    static string GetDeploymentName(Item item) =>
-        item.Deployment?.GetName() ?? item.DeploymentConfig?.GetName() ?? "";
-
-    private static IDictionary<string, string>? GetPodLabels(Item item)
-        => item.Deployment?.Spec.Template.Metadata.Labels ??
-           item.DeploymentConfig?.Spec.Template.Metadata.Labels;
-
     private string GetPodSelector(IDictionary<string, string> labels)
     {
         StringBuilder sb = new();
@@ -442,34 +214,18 @@ sealed partial class ListHandler
         return sb.ToString();
     }
 
-    private static bool IsSubsetOf(IDictionary<string, string>? selector, IDictionary<string, string>? labels)
+    sealed class Component
     {
-        if (selector is null || labels is null)
-        {
-            return false;
-        }
+        public required string Name { get; init; }
 
-        foreach (var pair in selector)
-        {
-            if (!labels.TryGetValue(pair.Key, out string? value) || value != pair.Value)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    sealed class Item
-    {
-        public required string App { get; init; }
         public List<BuildConfig> BuildConfigs { get; } = new();
-        public DeploymentConfig? DeploymentConfig { get; set; }
-        public Deployment? Deployment { get; set; }
-        public List<Service> Services { get; } = new();
-        public List<Route> Routes { get; } = new();
-        public List<Pod> Pods { get; } = new();
+        public List<Deployment> Deployments { get; } = new();
+        public List<ImageStream> ImageStreams { get; } = new();
         public List<PersistentVolumeClaim> Pvcs { get; } = new();
         public List<ConfigMap> ConfigMaps { get; } = new();
+        public List<Service> Services { get; } = new();
+        public List<Route> Routes { get; } = new();
+
+        public List<Pod> Pods { get; } = new();
     }
 }
