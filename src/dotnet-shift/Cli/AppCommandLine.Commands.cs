@@ -235,7 +235,7 @@ partial class AppCommandLine
         command.Add(Options.ContextOption);
         command.Add(Options.ForceOption);
 
-        command.Add(Options.RequiredAppArgument);
+        command.Add(Options.RequiredComponentArgument);
 
         command.Handler = CreateHandlerBuilder()
                             .Filter(GetLoginContext)
@@ -248,7 +248,7 @@ partial class AppCommandLine
 
                                 LoginContext loginContext = ctx.LoginContext!;
 
-                                string app = parseResult.GetValue(Options.RequiredAppArgument)!;
+                                string app = parseResult.GetValue(Options.RequiredComponentArgument)!;
                                 bool force = parseResult.GetValue(Options.ForceOption);
 
                                 return await handler.ExecuteAsync(loginContext, app, force, cancellationToken);

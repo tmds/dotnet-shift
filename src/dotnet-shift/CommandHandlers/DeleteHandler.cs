@@ -15,11 +15,11 @@ sealed partial class DeleteHandler
         OpenShiftClientFactory = clientFactory;
     }
 
-    public async Task<int> ExecuteAsync(LoginContext login, string app, bool force, CancellationToken cancellationToken)
+    public async Task<int> ExecuteAsync(LoginContext login, string component, bool force, CancellationToken cancellationToken)
     {
         using IOpenShiftClient client = OpenShiftClientFactory.CreateClient(login);
 
-        string selector = $"{ResourceLabels.PartOf}={app}";
+        string selector = $"{ResourceLabels.Name}={component}";
         List<Resource> resources = await FindResourcesAsync(client, selector, cancellationToken);
 
         bool includesPvcs = resources.Any(r => r.Type == ResourceType.PersistentVolumeClaim);
@@ -55,9 +55,6 @@ sealed partial class DeleteHandler
                     break;
                 case ResourceType.Service:
                     await client.DeleteServiceAsync(resource.Name, cancellationToken);
-                    break;
-                case ResourceType.DeploymentConfig:
-                    await client.DeleteDeploymentConfigAsync(resource.Name, cancellationToken);
                     break;
                 case ResourceType.Deployment:
                     await client.DeleteDeploymentAsync(resource.Name, cancellationToken);
@@ -106,13 +103,6 @@ sealed partial class DeleteHandler
             r => r.Metadata.Labels,
             cancellationToken);
 
-        await AppendResourcesAsync<DeploymentConfig>(resources, selector, client,
-            ResourceType.DeploymentConfig,
-            async (c, s, ct) => (await c.ListDeploymentConfigsAsync(s, ct)).Items,
-            r => r.GetName(),
-            r => r.Metadata.Labels,
-            cancellationToken);
-
         await AppendResourcesAsync<BuildConfig>(resources, selector, client,
             ResourceType.BuildConfig,
             async (c, s, ct) => (await c.ListBuildConfigsAsync(s, ct)).Items,
@@ -140,16 +130,16 @@ sealed partial class DeleteHandler
     private static int DeleteOrder(Resource lhs, Resource rhs)
     {
         // The delete order makes .NET applications that are partially removed still show up on the 'list' command.
-        // We remove resources without a runtime=dotnet label first, and remove DeploymentConfigs and BuildConfigs last.
-        return (lhs.HasDotnetRuntimeLabel, TypeOrder(lhs.Type), lhs.Name)
-                .CompareTo((rhs.HasDotnetRuntimeLabel, TypeOrder(rhs.Type), rhs.Name));
+        // We remove resources without a runtime=dotnet label first, and remove Deployments, BuildConfigs and ImageStreams last.
+        return (TypeOrder(lhs.Type), lhs.Name)
+                .CompareTo((TypeOrder(rhs.Type), rhs.Name));
 
         static int TypeOrder(ResourceType type) => // The higher the number, the later it is removed.
             type switch
             {
-                ResourceType.BuildConfig => 3,
+                ResourceType.ImageStream => 3,
                 ResourceType.Deployment => 2,
-                ResourceType.DeploymentConfig => 1,
+                ResourceType.BuildConfig => 1,
                 _ => 0
             };
     }
@@ -160,7 +150,6 @@ sealed partial class DeleteHandler
         ConfigMap,
         Route,
         Service,
-        DeploymentConfig,
         Deployment,
         BuildConfig,
         PersistentVolumeClaim
@@ -186,7 +175,6 @@ sealed partial class DeleteHandler
             {
                 Name = name,
                 Type = type,
-                HasDotnetRuntimeLabel = hasDotnetRuntimeLabel
             });
         }
     }
@@ -195,6 +183,5 @@ sealed partial class DeleteHandler
     {
         public required ResourceType Type { get; init; }
         public required string Name { get; init; }
-        public required bool HasDotnetRuntimeLabel { get; init; }
     }
 }
