@@ -59,27 +59,27 @@ sealed class ProjectReader : IProjectReader
     private ConfMap[] ReadConfigMaps(Project project, List<string> validationErrors)
     {
         List<ConfMap> maps = new();
-        ProjectItem[] items = GetItems(project, "ContainerConfigMap");
+        ProjectItem[] items = GetItems(project, "K8sConfigMap");
         HashSet<string> names = new();
         foreach (var item in items)
         {
             string name = item.EvaluatedInclude;
             if (!names.Add(name))
             {
-                validationErrors.Add("ContainerConfigMap Name is not unique.");
+                validationErrors.Add("K8sConfigMap Name is not unique.");
             }
             string? path =  GetMetadata(item, "Path");
             if (path is null)
             {
-                validationErrors.Add("ContainerConfigMap must have a Path.");
+                validationErrors.Add("K8sConfigMap must have a Path.");
             }
             else if (!path.StartsWith("/", StringComparison.InvariantCulture))
             {
-                validationErrors.Add("ContainerConfigMap Path is not an absolute path.");
+                validationErrors.Add("K8sConfigMap Path is not an absolute path.");
             }
             if (!TryGetMetadataAsBool(item, "ReadOnly", out bool? mountReadOnly))
             {
-                validationErrors.Add($"ContainerConfigMap ReadOnly must be 'true' or 'false'.");
+                validationErrors.Add($"K8sConfigMap ReadOnly must be 'true' or 'false'.");
             }
             if (path is not null)
             {
@@ -97,33 +97,33 @@ sealed class ProjectReader : IProjectReader
     private PersistentStorage[] ReadVolumeClaims(Project project, List<string> validationErrors)
     {
         List<PersistentStorage> claims = new();
-        ProjectItem[] items = GetItems(project, "ContainerPersistentStorage");
+        ProjectItem[] items = GetItems(project, "K8sPersistentStorage");
         HashSet<string> names = new();
         foreach (var item in items)
         {
             string name = item.EvaluatedInclude;
             if (!names.Add(name))
             {
-                validationErrors.Add("ContainerPersistentStorage Name is not unique.");
+                validationErrors.Add("K8sPersistentStorage Name is not unique.");
             }
             string? size =  GetMetadata(item, "Size");
             ResourceQuantity? sizeQuantity = null;
             if (size is null)
             {
-                validationErrors.Add("ContainerPersistentStorage must have a Size.");
+                validationErrors.Add("K8sPersistentStorage must have a Size.");
             }
             else if (!ResourceQuantity.TryParse(size, out sizeQuantity))
             {
-                validationErrors.Add($"ContainerPersistentStorage Size '{size}' is not a valid quantity.");
+                validationErrors.Add($"K8sPersistentStorage Size '{size}' is not a valid quantity.");
             }
             string? path =  GetMetadata(item, "Path");
             if (path is null)
             {
-                validationErrors.Add("ContainerPersistentStorage must have a Path.");
+                validationErrors.Add("K8sPersistentStorage must have a Path.");
             }
             else if (!path.StartsWith("/", StringComparison.InvariantCulture))
             {
-                validationErrors.Add("ContainerPersistentStorage Path is not an absolute path.");
+                validationErrors.Add("K8sPersistentStorage Path is not an absolute path.");
             }
             ResourceQuantity? limitQuantity = null;
             string? limit =  GetMetadata(item, "Limit");
@@ -133,7 +133,7 @@ sealed class ProjectReader : IProjectReader
             }
             if (limit is not null && !ResourceQuantity.TryParse(limit, out limitQuantity))
             {
-                validationErrors.Add($"ContainerPersistentStorage Limit '{limit}' is not a valid quantity.");
+                validationErrors.Add($"K8sPersistentStorage Limit '{limit}' is not a valid quantity.");
             }
             string? storageClass =  GetMetadata(item, "StorageClass");
             if (storageClass is { Length: 0})
@@ -147,7 +147,7 @@ sealed class ProjectReader : IProjectReader
             }
             if (!IsValidAccessMode(access))
             {
-                validationErrors.Add($"ContainerPersistentStorage Access '{access}' is not a valid access mode.");
+                validationErrors.Add($"K8sPersistentStorage Access '{access}' is not a valid access mode.");
             }
             if (sizeQuantity is not null &&
                 path is not null)
@@ -226,7 +226,7 @@ sealed class ProjectReader : IProjectReader
     private static ContainerResources ReadContainerLimits(List<string> validationErrors, Project project)
     {
         Dictionary<string, ResourceQuantity> resourceLimits = new();
-        foreach (var prop in new[] { "ContainerCpuRequest", "ContainerCpuLimit", "ContainerMemoryRequest", "ContainerMemoryLimit" })
+        foreach (var prop in new[] { "K8sCpuRequest", "K8sCpuLimit", "K8sMemoryRequest", "K8sMemoryLimit" })
         {
             string? value = GetProperty(project, prop);
             if (value != null)
@@ -243,10 +243,10 @@ sealed class ProjectReader : IProjectReader
         }
         var containerLimits = new ContainerResources()
         {
-            ContainerCpuRequest = TryGetDictionaryValue(resourceLimits, "ContainerCpuRequest"),
-            ContainerCpuLimit = TryGetDictionaryValue(resourceLimits, "ContainerCpuLimit"),
-            ContainerMemoryRequest = TryGetDictionaryValue(resourceLimits, "ContainerMemoryRequest"),
-            ContainerMemoryLimit = TryGetDictionaryValue(resourceLimits, "ContainerMemoryLimit"),
+            ContainerCpuRequest = TryGetDictionaryValue(resourceLimits, "K8sCpuRequest"),
+            ContainerCpuLimit = TryGetDictionaryValue(resourceLimits, "K8sCpuLimit"),
+            ContainerMemoryRequest = TryGetDictionaryValue(resourceLimits, "K8sMemoryRequest"),
+            ContainerMemoryLimit = TryGetDictionaryValue(resourceLimits, "K8sMemoryLimit"),
         };
         return containerLimits;
     }
