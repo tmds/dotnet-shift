@@ -2,6 +2,8 @@ namespace CommandHandlers;
 
 using System;
 using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using OpenShift;
 
 sealed partial class DeployHandler
@@ -116,8 +118,7 @@ sealed partial class DeployHandler
 
         bool enableTrigger = projectInfo.EnableImageStreamTagDeploymentTrigger;
 
-        // If we're running inside the cluster, build the image directly in the pod using the SDK.
-        bool useS2iBuild = login.IsPodServiceAccount ? false: true;
+        bool runningInCluster = login.IsPodServiceAccount;
 
         string? appImage = null;
         if (doBuild)
@@ -131,14 +132,14 @@ sealed partial class DeployHandler
                 await DisableImageStreamDeploymentTriggerAsync(client, resources.Deployment, cancellationToken);
             }
 
-            await UpdateBuildResourcesAsync(client, useS2iBuild, resources, name, binaryBuildConfigName, appImageStreamTagName, runtimeVersion, partOf, cancellationToken);
+            bool useS2iBuild = await UpdateBuildResourcesAsync(client, runningInCluster, resources, name, binaryBuildConfigName, appImageStreamTagName, runtimeVersion, partOf, cancellationToken);
             if (useS2iBuild)
             {
                 appImage = await S2IBuildAsync(projectFile, contextDir, projectInfo, runtimeVersion, binaryBuildConfigName, client, resources, cancellationToken);
             }
             else
             {
-                appImage = await SdkImageBuildAsync(client, projectFile, appImageStreamTagName, runtimeVersion, resources, cancellationToken);
+                appImage = await SdkImageBuildAsync(client, runningInCluster, projectFile, appImageStreamTagName, runtimeVersion, resources, cancellationToken);
             }
             if (appImage is null)
             {
@@ -151,7 +152,7 @@ sealed partial class DeployHandler
         if (!doBuild)
         {
             // Keep build resources in sync also when we're not doing a build.
-            await UpdateBuildResourcesAsync(client, useS2iBuild, resources, name, binaryBuildConfigName, appImageStreamTagName, runtimeVersion, partOf, cancellationToken);
+            await UpdateBuildResourcesAsync(client, runningInCluster, resources, name, binaryBuildConfigName, appImageStreamTagName, runtimeVersion, partOf, cancellationToken);
         }
         Route? route = await UpdateResourcesAsync(
                                     client, resources, name,
@@ -184,12 +185,9 @@ sealed partial class DeployHandler
         return CommandResult.Success;
     }
 
-    private async Task<string?> SdkImageBuildAsync(IOpenShiftClient client, string projectFile, string appImageStreamTagName, string runtimeVersion, ComponentResources resources, CancellationToken cancellationToken)
+    private async Task<string?> SdkImageBuildAsync(IOpenShiftClient client, bool runningInCluster, string projectFile, string appImageStreamTagName, string runtimeVersion, ComponentResources resources, CancellationToken cancellationToken)
     {
-        string registry = "image-registry.openshift-image-registry.svc:5000";
-        string tag = appImageStreamTagName.Substring(appImageStreamTagName.IndexOf(':') + 1);
-        string repository = $"{client.Namespace}/{appImageStreamTagName.Substring(0, appImageStreamTagName.Length - tag.Length - 1)}";
-        string containerBaseImage = $"{registry}/{client.Namespace}/{DotnetRuntimeImageStreamName}:{runtimeVersion}";
+        const string InternalRegistryHostName = "image-registry.openshift-image-registry.svc:5000";
 
         // Ensure the runtime base image is defined and resolved.
         ImageStream? s2iImageStream = await ApplyDotnetImageStreamTag(
@@ -203,6 +201,42 @@ sealed partial class DeployHandler
             return null;
         }
 
+        string registry;
+        string? registryUserName = null;
+        string? registryPassword = null;
+        if (runningInCluster)
+        {
+            registry = InternalRegistryHostName;
+        }
+        else
+        {
+            string? publicRepository = s2iImageStream.Status.PublicDockerImageRepository;
+            if (publicRepository is null)
+            {
+                Console.WriteErrorLine("The OpenShift image registry is not exposed.");
+                return null;
+            }
+            registry = publicRepository.Substring(0, publicRepository.IndexOf('/'));
+            string? dockerConfig = await GetBuilderDockerConfigAsync(client, cancellationToken);
+            if (dockerConfig is null)
+            {
+                Console.WriteErrorLine("Could not find builder credentials for the OpenShift image registry.");
+                return null;
+            }
+            JsonNode json = JsonNode.Parse(dockerConfig)!;
+            JsonNode? auth = json[registry];
+            if (auth is null)
+            {
+                Console.WriteErrorLine("Could not find credentials for the OpenShift public image registry route.");
+                return null;
+            }
+            registryUserName = auth["username"]?.GetValue<string>();
+            registryPassword = auth["password"]?.GetValue<string>();
+        }
+        string tag = appImageStreamTagName.Substring(appImageStreamTagName.IndexOf(':') + 1);
+        string repository = $"{client.Namespace}/{appImageStreamTagName.Substring(0, appImageStreamTagName.Length - tag.Length - 1)}";
+        string containerBaseImage = $"{registry}/{client.Namespace}/{DotnetRuntimeImageStreamName}:{runtimeVersion}";
+
         // We need the digest, which we can obtain using '--getProperty'.
         // Unfortunately, that leaves the user without any output of how the operation is progressing.
         // To have some output, we first publish the project with console output.
@@ -215,6 +249,7 @@ sealed partial class DeployHandler
                 "publish",
                 projectFile
             },
+            envvars: null,
             stdout: null, cancellationToken
         );
         if (rv != -0)
@@ -224,6 +259,15 @@ sealed partial class DeployHandler
 
         Console.WriteLine();
         Console.WriteLine($"Publishing application image to image registry...");
+        Dictionary<string, string>? envvars = null;
+        if (registryUserName is not null && registryPassword is not null)
+        {
+            envvars = new()
+            {
+                { "SDK_CONTAINER_REGISTRY_UNAME", registryUserName },
+                { "SDK_CONTAINER_REGISTRY_PWORD", registryPassword }
+            };
+        }
         rv = await RunDotnetAsync(
             new[] {
                 "publish",
@@ -235,6 +279,7 @@ sealed partial class DeployHandler
                 "--getProperty:GeneratedContainerDigest",
                 projectFile
             },
+            envvars,
             stdout, cancellationToken
         );
 
@@ -243,13 +288,28 @@ sealed partial class DeployHandler
             return null;
         }
 
-        string image = $"{registry}/{repository}@{stdout.ToString().Trim()}";
+        string image = $"{InternalRegistryHostName}/{repository}@{stdout.ToString().Trim()}";
         Console.WriteLine($"Succesfully pushed image '{image}'");
 
         return image;
     }
 
-    private async Task<int> RunDotnetAsync(IEnumerable<string> arguments, StringBuilder? stdout, CancellationToken cancellationToken)
+    private async Task<string?> GetBuilderDockerConfigAsync(IOpenShiftClient client, CancellationToken cancellationToken)
+    {
+        SecretList secrets = await client.ListSecretsAsync(labelSelector: null, fieldSelector: "type=kubernetes.io/dockercfg", cancellationToken);
+        foreach (var secret in secrets.Items)
+        {
+            if (secret.Metadata.Name.StartsWith("builder-dockercfg-") &&
+                secret.Metadata.Annotations?.TryGetValue("kubernetes.io/service-account.name", out string sa) == true &&
+                sa == "builder")
+            {
+                return Encoding.UTF8.GetString(secret.Data[".dockercfg"]);
+            }
+        }
+        return null;
+    }
+
+    private async Task<int> RunDotnetAsync(IEnumerable<string> arguments, IDictionary<string, string>? envvars, StringBuilder? stdout, CancellationToken cancellationToken)
     {
         Process process = new();
         process.StartInfo.FileName = "dotnet";
@@ -271,6 +331,14 @@ sealed partial class DeployHandler
         })
         {
             process.StartInfo.EnvironmentVariables.Remove(envvar);
+        }
+
+        if (envvars is not null)
+        {
+            foreach (var envvar in envvars)
+            {
+                process.StartInfo.EnvironmentVariables[envvar.Key] = envvar.Value;
+            }
         }
 
         process.Start();
@@ -786,9 +854,9 @@ sealed partial class DeployHandler
 #endif
     }
 
-    private async Task UpdateBuildResourcesAsync(
+    private async Task<bool> UpdateBuildResourcesAsync(
                                             IOpenShiftClient client,
-                                            bool isS2iBuild,
+                                            bool runningInCluster,
                                             ComponentResources current,
                                             string name,
                                             string binaryBuildConfigName,
@@ -800,13 +868,16 @@ sealed partial class DeployHandler
         Dictionary<string, string> componentLabels = GetComponentLabels(partOf, name);
         Dictionary<string, string> runtimeLabels = GetRuntimeLabels(runtimeVersion);
 
-        ImageStream? imageStream = await ApplyAppImageStream(client,
+        ImageStream imageStream = await ApplyAppImageStream(client,
                                   name,
                                   current.ImageStream,
                                   Merge(componentLabels, runtimeLabels),
                                   cancellationToken);
 
-        if (isS2iBuild || current.BinaryBuildConfig is not null)
+        bool useSDKBuild = runningInCluster || !string.IsNullOrEmpty(imageStream.Status?.PublicDockerImageRepository);
+        bool useS2iBuild = !useSDKBuild;
+
+        if (useS2iBuild || current.BinaryBuildConfig is not null)
         {
             await ApplyBinaryBuildConfig(
                     client,
@@ -817,6 +888,8 @@ sealed partial class DeployHandler
                     Merge(componentLabels, runtimeLabels),
                     cancellationToken);
         }
+
+        return useS2iBuild;
     }
 
     private async Task<Route?> UpdateResourcesAsync(IOpenShiftClient client,

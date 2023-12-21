@@ -190,6 +190,9 @@ sealed class MockOpenShiftClient : IOpenShiftClient
     public Task<Build> StartBinaryBuildAsync(string buildConfigName, Stream archiveStream, CancellationToken cancellationToken)
         => Task.FromResult(_server.StartBinaryBuild(buildConfigName, archiveStream));
 
+    public Task<SecretList> ListSecretsAsync(string? labelSelector, string? fieldSelector, CancellationToken cancellationToken)
+        => throw new NotSupportedException();
+
     public void Dispose()
     { }
 }

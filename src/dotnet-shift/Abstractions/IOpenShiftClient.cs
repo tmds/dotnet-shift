@@ -51,4 +51,5 @@ interface IOpenShiftClient : IDisposable
     Task<PersistentVolumeClaimList> ListPersistentVolumeClaimsAsync(string? labelSelector, CancellationToken cancellationToken);
     Task DeletePersistentVolumeClaimAsync(string name, CancellationToken cancellationToken);
     Task<PersistentVolumeClaim> PatchPersistentVolumeClaimAsync(PersistentVolumeClaim pvc, CancellationToken cancellationToken);
+    Task<SecretList> ListSecretsAsync(string? labelSelector, string? fieldSelector, CancellationToken cancellationToken);
 }
