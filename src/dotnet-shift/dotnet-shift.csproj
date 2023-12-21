@@ -9,8 +9,7 @@
     <Copyright>Tom Deseyn</Copyright>
     <PackageId>dotnet-shift</PackageId>
     <RollForward>Major</RollForward>
-    <TargetFramework>net7.0</TargetFramework>
-    <TargetFrameworks>net6.0;$(TargetFramework)</TargetFrameworks>
+    <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
@@ -30,8 +29,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="System.IO.Pipelines" Version="8.0.0" />
-    <!-- Reference an older Microsoft.Build package that supports net6.0. -->
-    <PackageReference Include="Microsoft.Build" Version="17.3.0" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build" Version="17.8.3" ExcludeAssets="runtime" />
   </ItemGroup>
 
 </Project>
