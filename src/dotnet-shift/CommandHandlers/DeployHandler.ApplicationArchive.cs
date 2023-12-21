@@ -4,7 +4,7 @@ using System;
 using System.IO.Pipelines;
 using System.IO.Enumeration;
 using System.IO.Compression;
-#if NET7_0
+#if NET7_0_OR_GREATER
 using System.Formats.Tar;
 #endif
 using System.Runtime.InteropServices;
