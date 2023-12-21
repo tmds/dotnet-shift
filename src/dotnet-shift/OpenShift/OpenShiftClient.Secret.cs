@@ -5,6 +5,9 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task<SecretList> ListSecretsAsync(string? labelSelector, CancellationToken cancellationToken)
         => ListCoreV1NamespacedSecretAsync(Namespace, labelSelector: labelSelector, cancellationToken: cancellationToken);
 
+    public Task<SecretList> ListSecretsAsync(string? labelSelector, string? fieldSelector, CancellationToken cancellationToken)
+        => ListCoreV1NamespacedSecretAsync(Namespace, labelSelector: labelSelector, fieldSelector: fieldSelector, cancellationToken: cancellationToken);
+
     private async System.Threading.Tasks.Task<SecretList> ListCoreV1NamespacedSecretAsync(string @namespace, bool? allowWatchBookmarks = null, string? @continue = null, string? fieldSelector = null, string? labelSelector = null, int? limit = null, string? resourceVersion = null, string? resourceVersionMatch = null, int? timeoutSeconds = null, bool? watch = null, string? pretty = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (@namespace == null)
