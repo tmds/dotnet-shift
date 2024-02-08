@@ -33,13 +33,23 @@ $ dotnet shift deploy --expose /tmp/web
 
 ### Environment Variables
 
-`ContainerEnvironmentVariable` adds an environment variable in the container image.
+`ContainerEnvironmentVariable` adds an environment variable in the **container image**.
 
 **Example:**
 
 ```xml
 <ItemGroup>
   <ContainerEnvironmentVariable Include="LOGGER_VERBOSITY" Value="Trace" />
+</ItemGroup>
+```
+
+`K8sEnvironmentVariable` adds an environment variable in the **container deployment**.
+
+**Example:**
+
+```xml
+<ItemGroup>
+  <K8sEnvironmentVariable Include="LOGGER_VERBOSITY" Value="Trace" />
 </ItemGroup>
 ```
 
@@ -146,6 +156,18 @@ Other configuration is optional. The port defaults to `http` and its value must 
 <K8sReadinessTimeout>1</K8sReadinessTimeout>
 <K8sReadinessFailureThresholdCount>3</K8sReadinessFailureThresholdCount>
 ]
+```
+
+### Deployment strategy
+
+By default the application is deployed using a _rolling update_. This can be changed to _recreate_ by setting the `K8sDeploymentStrategy`.
+
+Valid values are: `RollingUpdate`/`Recreate`. When empty, the tooling prefers `RollingUpdate` unless the project has some configuration that requires `Recreate`, like volumes that may can only be mounted once.
+
+**Example:**
+
+```xml
+<K8sDeploymentStrategy>Recreate</K8sDeploymentStrategy>
 ```
 
 ### Deployment trigger
