@@ -17,6 +17,7 @@ sealed partial class DeployHandler
         string? gitUri, string? gitRef,
         string? appImage, string appImageStreamTagName,
         global::ContainerPort[] ports,
+        global::DeploymentStrategy? deploymentStrategy,
         PersistentStorage[] claims,
         ConfMap[] configMaps,
         Dictionary<string, string> labels,
@@ -32,6 +33,7 @@ sealed partial class DeployHandler
             appImage,
             appImageStreamTagName,
             ports,
+            deploymentStrategy,
             claims,
             configMaps,
             labels,
@@ -130,6 +132,7 @@ sealed partial class DeployHandler
         string? gitUri, string? gitRef,
         string? appImage, string appImageStreamTagName,
         global::ContainerPort[] ports,
+        global::DeploymentStrategy? deploymentStrategy,
         PersistentStorage[] claims,
         ConfMap[] configMaps,
         Dictionary<string, string> labels,
@@ -143,9 +146,22 @@ sealed partial class DeployHandler
 
         Dictionary<string, string> annotations = GetAppDeploymentAnnotations(gitUri, gitRef, appImageStreamTagName, enableTrigger);
 
-        // If only a single mount is allowed, the previous pod must be down, so the new pod can attach.
-        bool hasReadWriteOnceVolumes = claims.Any(c => c.Access == "ReadWriteOnce" || c.Access == "ReadWriteOncePod");
-        DeploymentStrategy2Type deploymentStrategy = hasReadWriteOnceVolumes ? DeploymentStrategy2Type.Recreate : DeploymentStrategy2Type.RollingUpdate;
+        DeploymentStrategy2Type strategy;
+        if (deploymentStrategy.HasValue)
+        {
+            strategy = deploymentStrategy.Value switch
+            {
+                global::DeploymentStrategy.Recreate => DeploymentStrategy2Type.Recreate,
+                global::DeploymentStrategy.RollingUpdate => DeploymentStrategy2Type.RollingUpdate,
+                _ => throw new ArgumentOutOfRangeException(deploymentStrategy.ToString())
+            };
+        }
+        else
+        {
+            // If only a single mount is allowed, the previous pod must be down, so the new pod can attach.
+            bool hasReadWriteOnceVolumes = claims.Any(c => c.Access == "ReadWriteOnce" || c.Access == "ReadWriteOncePod");
+            strategy = hasReadWriteOnceVolumes ? DeploymentStrategy2Type.Recreate : DeploymentStrategy2Type.RollingUpdate;
+        }
 
         return new Deployment()
         {
@@ -161,7 +177,7 @@ sealed partial class DeployHandler
             {
                 Strategy = new()
                 {
-                    Type = deploymentStrategy
+                    Type = strategy
                 },
                 Replicas = null, // Defaults to '1'.
                 Selector = new()

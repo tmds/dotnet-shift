@@ -159,7 +159,8 @@ sealed partial class DeployHandler
                                     runtimeVersion,
                                     gitUri: gitInfo?.RemoteUrl, gitRef: gitInfo?.RemoteBranch,
                                     appImage, appImageStreamTagName,
-                                    partOf, expose, projectInfo.ContainerPorts, projectInfo.ExposedPort,
+                                    partOf, expose, projectInfo.DeploymentStrategy,
+                                    projectInfo.ContainerPorts, projectInfo.ExposedPort,
                                     projectInfo.VolumeClaims, projectInfo.ConfigMaps,
                                     projectInfo.ContainerLimits,
                                     projectInfo.LivenessProbe, projectInfo.ReadinessProbe, projectInfo.StartupProbe,
@@ -300,7 +301,7 @@ sealed partial class DeployHandler
         foreach (var secret in secrets.Items)
         {
             if (secret.Metadata.Name.StartsWith("builder-dockercfg-") &&
-                secret.Metadata.Annotations?.TryGetValue("kubernetes.io/service-account.name", out string sa) == true &&
+                secret.Metadata.Annotations?.TryGetValue("kubernetes.io/service-account.name", out string? sa) == true &&
                 sa == "builder")
             {
                 return Encoding.UTF8.GetString(secret.Data[".dockercfg"]);
@@ -899,6 +900,7 @@ sealed partial class DeployHandler
                                             string? gitUri, string? gitRef,
                                             string? appImage, string appImageStreamTagName,
                                             string partOf, bool expose,
+                                            global::DeploymentStrategy? deploymentStrategy,
                                             global::ContainerPort[] ports, global::ContainerPort? exposedPort,
                                             PersistentStorage[] claims,
                                             ConfMap[] configMaps,
@@ -947,6 +949,7 @@ sealed partial class DeployHandler
                                         gitUri, gitRef,
                                         appImage, appImageStreamTagName,
                                         ports,
+                                        deploymentStrategy,
                                         claims,
                                         configMaps,
                                         Merge(componentLabels, runtimeLabels),
