@@ -36,6 +36,8 @@ sealed record ProjectInformation
     public HttpGetProbe? LivenessProbe { get; init; }
     public HttpGetProbe? ReadinessProbe { get; init; }
     public HttpGetProbe? StartupProbe { get; init; }
+
+    public DeploymentStrategy? DeploymentStrategy { get; init; }
 }
 
 sealed record HttpGetProbe
@@ -46,4 +48,10 @@ sealed record HttpGetProbe
     public int? Period { get; set; }
     public int? Timeout { get; set; }
     public int? FailureThresholdCount { get; set; }
+}
+
+enum DeploymentStrategy
+{
+    Recreate,
+    RollingUpdate
 }

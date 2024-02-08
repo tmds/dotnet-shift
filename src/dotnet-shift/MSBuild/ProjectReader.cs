@@ -32,6 +32,16 @@ sealed class ProjectReader : IProjectReader
         HttpGetProbe? livenessProbe = ReadProbe(project, containerPorts, "Liveness", validationErrors);
         HttpGetProbe? readinessProbe = ReadProbe(project, containerPorts, "Readiness", validationErrors);
         HttpGetProbe? startupProbe = ReadProbe(project, containerPorts, "Startup", validationErrors);
+        DeploymentStrategy? deploymentStrategy = ReadDeploymentStrategy(project, validationErrors);
+
+        bool hasReadWriteOnceVolumes = volumeClaims.Any(c => c.Access == "ReadWriteOnce" || c.Access == "ReadWriteOncePod");
+        if (hasReadWriteOnceVolumes)
+        {
+            if (deploymentStrategy == DeploymentStrategy.RollingUpdate)
+            {
+                validationErrors.Add($"K8sDeploymentStrategy 'RollingUpdate' can not be combined with 'ReadWriteOnce'/'ReadWriteOncePod' volumes.");
+            }
+        }
 
         if (validationErrors.Count > 0)
         {
@@ -57,11 +67,31 @@ sealed class ProjectReader : IProjectReader
             LivenessProbe = livenessProbe,
             ReadinessProbe = readinessProbe,
             StartupProbe = startupProbe,
+            DeploymentStrategy = deploymentStrategy
         };
 
         project.ProjectCollection.UnloadProject(project);
 
         return true;
+    }
+
+    private DeploymentStrategy? ReadDeploymentStrategy(Project project, List<string> validationErrors)
+    {
+        string? strategy = GetProperty(project, $"K8sDeploymentStrategy");
+
+        DeploymentStrategy? retval = strategy switch
+        {
+            "Recreate" => DeploymentStrategy.Recreate,
+            "RollingUpdate" => DeploymentStrategy.RollingUpdate,
+            _ => null
+        };
+
+        if (!string.IsNullOrEmpty(strategy) && !retval.HasValue)
+        {
+            validationErrors.Add($"K8sDeploymentStrategy '{strategy}' is not recognized. Allowed values are 'RollingUpdate'/'Recreate'.");
+        }
+
+        return retval;
     }
 
     private HttpGetProbe? ReadProbe(Project project, ContainerPort[] containerPorts, string probeName, List<string> validationErrors)
