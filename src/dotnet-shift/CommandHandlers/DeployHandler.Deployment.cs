@@ -16,8 +16,9 @@ sealed partial class DeployHandler
         Deployment? previous,
         string? gitUri, string? gitRef,
         string? appImage, string appImageStreamTagName,
-        global::ContainerPort[] ports,
         global::DeploymentStrategy? deploymentStrategy,
+        Dictionary<string, string> environment,
+        global::ContainerPort[] ports,
         PersistentStorage[] claims,
         ConfMap[] configMaps,
         Dictionary<string, string> labels,
@@ -32,8 +33,9 @@ sealed partial class DeployHandler
             gitUri, gitRef,
             appImage,
             appImageStreamTagName,
-            ports,
             deploymentStrategy,
+            environment,
+            ports,
             claims,
             configMaps,
             labels,
@@ -131,8 +133,9 @@ sealed partial class DeployHandler
         string name,
         string? gitUri, string? gitRef,
         string? appImage, string appImageStreamTagName,
-        global::ContainerPort[] ports,
         global::DeploymentStrategy? deploymentStrategy,
+        Dictionary<string, string> environment,
+        global::ContainerPort[] ports,
         PersistentStorage[] claims,
         ConfMap[] configMaps,
         Dictionary<string, string> labels,
@@ -205,12 +208,23 @@ sealed partial class DeployHandler
                                 LivenessProbe = CreateProbe(livenessProbe),
                                 ReadinessProbe = CreateProbe(readinessProbe),
                                 StartupProbe = CreateProbe(startupProbe),
+                                Env = CreateEnv(environment)
                             }
                         }
                     }
                 }
             }
         };
+
+        static List<EnvVar> CreateEnv(Dictionary<string, string> environment)
+        {
+            List<EnvVar> env = new();
+            foreach (var envvar in environment)
+            {
+                env.Add(new EnvVar() { Name = envvar.Key, Value = envvar.Value} );
+            }
+            return env;
+        }
 
         static Probe2? CreateProbe(HttpGetProbe? probe)
         {

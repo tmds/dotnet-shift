@@ -22,8 +22,13 @@ sealed class ProjectReader : IProjectReader
         string? assemblyName = ReadAssemblyName(validationErrors, project);
         bool isAspNet = IsAspNet(project);
 
-        Dictionary<string, string> environmentVariables = ReadEnvironmentVariables(project, isAspNet);
-
+        Dictionary<string, string> environmentVariables = ReadEnvironmentVariables(project, "ContainerEnvironmentVariable");
+        // If the user hasn't set ASPNETCORE_URLS for an ASP.NET Core project, set a default value.
+        if (isAspNet && !environmentVariables.TryGetValue(ASPNETCORE_URLS, out _))
+        {
+            environmentVariables["ASPNETCORE_URLS"] = "http://*:8080";
+        }
+        Dictionary<string, string> deploymentEnvironmentVariables = ReadEnvironmentVariables(project, "K8sEnvironmentVariable");
         ContainerResources containerLimits = ReadContainerLimits(validationErrors, project);
         ContainerPort[] containerPorts = ReadContainerPorts(project, environmentVariables, validationErrors);
         PersistentStorage[] volumeClaims = ReadVolumeClaims(project, validationErrors);
@@ -58,6 +63,7 @@ sealed class ProjectReader : IProjectReader
             DotnetVersion = dotnetVersion!,
             AssemblyName = assemblyName!,
             ContainerEnvironmentVariables = environmentVariables,
+            DeploymentEnvironmentVariables = deploymentEnvironmentVariables,
             ContainerLimits = containerLimits,
             ContainerPorts = containerPorts,
             ExposedPort = exposedPort,
@@ -372,10 +378,10 @@ sealed class ProjectReader : IProjectReader
         return containerLimits;
     }
 
-    private static Dictionary<string, string> ReadEnvironmentVariables(Project project, bool isAspNet)
+    private static Dictionary<string, string> ReadEnvironmentVariables(Project project, string itemName)
     {
         Dictionary<string, string> environmentVariables = new();
-        ProjectItem[] environmentVariableItems = GetItems(project, "ContainerEnvironmentVariable");
+        ProjectItem[] environmentVariableItems = GetItems(project, itemName);
         foreach (var envvarItem in environmentVariableItems)
         {
             string? value = GetMetadata(envvarItem, "Value");
@@ -383,11 +389,6 @@ sealed class ProjectReader : IProjectReader
             {
                 environmentVariables[envvarItem.EvaluatedInclude] = value;
             }
-        }
-        // If the user hasn't set ASPNETCORE_URLS for an ASP.NET Core project, set a default value.
-        if (isAspNet && !environmentVariables.TryGetValue(ASPNETCORE_URLS, out _))
-        {
-            environmentVariables["ASPNETCORE_URLS"] = "http://*:8080";
         }
         return environmentVariables;
     }
