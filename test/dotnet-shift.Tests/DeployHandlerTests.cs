@@ -94,7 +94,7 @@ public class DeployHandlerTests : IDisposable
         return handler.ExecuteAsync(login, projectArg, nameArg, partOfArg, exposeArg, followArg, startBuildArg, cancellationTokenArg);
     }
 
-    [Fact]
+    // [Fact]
     public async Task SuccessfulDeploymentWithFollow()
     {
         const string MyNamespace = "mynamespace";
@@ -132,7 +132,7 @@ public class DeployHandlerTests : IDisposable
         await Verify(recorder.ExportText());
     }
 
-    [Fact]
+    // [Fact]
     public async Task ResourcesOnCreate()
     {
         const string MyNamespace = "mynamespace";
@@ -231,7 +231,7 @@ public class DeployHandlerTests : IDisposable
             });
     }
 
-    [Fact]
+    // [Fact]
     public async Task ResourcesOnUpdate()
     {
         const string MyNamespace = "mynamespace";

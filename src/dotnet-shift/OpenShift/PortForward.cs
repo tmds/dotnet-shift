@@ -9,6 +9,7 @@ namespace OpenShift
         private readonly bool[] _receivedPortHeader = new bool[2];
         private readonly byte[] _tinyBuffer = new byte[2];
         private bool _eof;
+        private ValueWebSocketReceiveResult? _pendingReceiveResult;
 
         internal PortForward(WebSocket websocket)
         {
@@ -108,7 +109,28 @@ namespace OpenShift
                     throw new InvalidOperationException($"Expected to receive channel data. Received {currentReadType}.");
                 }
 
-                receiveResult = await _webSocket.ReceiveAsync(buffer, cancellationToken);
+                // The caller is making a 0-byte receive to wait until there is something incoming.
+                // A WebSocket doesn't support this, so we make a 1-byte receive instead.
+                if (buffer.Length == 0)
+                {
+                    if (!_pendingReceiveResult.HasValue)
+                    {
+                        // Make a 1-byte receive and store the result in _tinyBuffer for the next non-zero byte read.
+                        _pendingReceiveResult = await _webSocket.ReceiveAsync(_tinyBuffer.AsMemory(1, 1), cancellationToken);
+                    }
+                    return 0;
+                }
+
+                if (_pendingReceiveResult.HasValue)
+                {
+                    receiveResult = _pendingReceiveResult.Value;
+                    _pendingReceiveResult = null;
+                    _tinyBuffer.AsMemory(1, 1).CopyTo(buffer);
+                }
+                else
+                {
+                    receiveResult = await _webSocket.ReceiveAsync(buffer, cancellationToken);
+                }
 
                 if (receiveResult.MessageType == WebSocketMessageType.Close)
                 {

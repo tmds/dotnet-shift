@@ -2,12 +2,13 @@ namespace CommandHandlers;
 
 using System;
 using System.Runtime.InteropServices;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using OpenShift;
 
 sealed partial class DeployHandler
 {
+    const string InternalRegistryHostName = "image-registry.openshift-image-registry.svc:5000";
+
     private ILogger Logger { get; }
     private IAnsiConsole Console { get; }
     private string WorkingDirectory { get; }
@@ -133,6 +134,8 @@ sealed partial class DeployHandler
             }
 
             bool useS2iBuild = await UpdateBuildResourcesAsync(client, runningInCluster, resources, name, binaryBuildConfigName, appImageStreamTagName, runtimeVersion, partOf, cancellationToken);
+            // TODO: all builds use the SDK, remove the s2i build support.
+            useS2iBuild = false;
             if (useS2iBuild)
             {
                 appImage = await S2IBuildAsync(projectFile, contextDir, projectInfo, runtimeVersion, binaryBuildConfigName, client, resources, cancellationToken);
@@ -190,8 +193,6 @@ sealed partial class DeployHandler
 
     private async Task<string?> SdkImageBuildAsync(IOpenShiftClient client, bool runningInCluster, string projectFile, string appImageStreamTagName, string runtimeVersion, ComponentResources resources, CancellationToken cancellationToken)
     {
-        const string InternalRegistryHostName = "image-registry.openshift-image-registry.svc:5000";
-
         // Ensure the runtime base image is defined and resolved.
         ImageStream? s2iImageStream = await ApplyDotnetImageStreamTag(
                                         client,
@@ -203,6 +204,11 @@ sealed partial class DeployHandler
         {
             return null;
         }
+        string? publicRepository = s2iImageStream.Status.PublicDockerImageRepository;
+
+        bool useHelperPod = !runningInCluster && publicRepository is null;
+        await using HelperPod? helperPod = useHelperPod ? await StartHelperPodAsync(client, runtimeVersion, cancellationToken)
+                                                        : null;
 
         string registry;
         string? registryUserName = null;
@@ -213,13 +219,19 @@ sealed partial class DeployHandler
         }
         else
         {
-            string? publicRepository = s2iImageStream.Status.PublicDockerImageRepository;
-            if (publicRepository is null)
+            if (useHelperPod)
             {
-                Console.WriteErrorLine("The OpenShift image registry is not exposed.");
-                return null;
+                Debug.Assert(helperPod is not null);
+                Uri proxyUrl = await helperPod.RemoteProxyToInternalRegistryAsync(cancellationToken);
+                Debug.Assert(proxyUrl.Host == "127.0.0.1");
+                // Change the url to 'localhost' because that is where the .NET SDK uses 'http' instead of 'https'.
+                registry = $"localhost:{proxyUrl.Port}";
             }
-            registry = publicRepository.Substring(0, publicRepository.IndexOf('/'));
+            else
+            {
+                Debug.Assert(publicRepository is not null);
+                registry = publicRepository.Substring(0, publicRepository.IndexOf('/'));
+            }
             string? dockerConfig = await GetBuilderDockerConfigAsync(client, cancellationToken);
             if (dockerConfig is null)
             {
@@ -227,7 +239,7 @@ sealed partial class DeployHandler
                 return null;
             }
             JsonNode json = JsonNode.Parse(dockerConfig)!;
-            JsonNode? auth = json[registry];
+            JsonNode? auth = json[InternalRegistryHostName];
             if (auth is null)
             {
                 Console.WriteErrorLine("Could not find credentials for the OpenShift public image registry route.");
@@ -686,10 +698,10 @@ sealed partial class DeployHandler
 
                             int availablePods = deployment.Status.AvailableReplicas ?? 0;
                             string availablePodsDescription = availablePods switch
-                                    {
-                                        1 => "There is 1 available pod.",
-                                        _ => $"There are {availablePods} available pods."
-                                    };
+                            {
+                                1 => "There is 1 available pod.",
+                                _ => $"There are {availablePods} available pods."
+                            };
 
                             Console.MarkupLine($"The deployment finished successfully. {availablePodsDescription}");
 

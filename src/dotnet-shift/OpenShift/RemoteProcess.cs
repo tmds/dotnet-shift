@@ -231,7 +231,7 @@ namespace OpenShift
             {
                 sendBuffer[0] = 0; // stdin
                 buffer.CopyTo(sendBuffer.AsMemory(1));
-                await _webSocket.SendAsync(sendBuffer, WebSocketMessageType.Binary, false, cancellationToken).ConfigureAwait(false);
+                await _webSocket.SendAsync(sendBuffer.AsMemory(0, buffer.Length + 1), WebSocketMessageType.Binary, true, cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -733,6 +733,9 @@ namespace OpenShift
             {
                 return Task.CompletedTask; // WriteAsync always flushes.
             }
+
+            public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+                => WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
 
             public override ValueTask WriteAsync(System.ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default(CancellationToken))
             {
