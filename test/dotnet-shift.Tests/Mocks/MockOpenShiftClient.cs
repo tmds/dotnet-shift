@@ -195,4 +195,31 @@ sealed class MockOpenShiftClient : IOpenShiftClient
 
     public void Dispose()
     { }
+
+
+    public Task<Pod> CreatePodAsync(Pod pod, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(_server.Create(pod.Metadata.Name, pod));
+    }
+
+    public Task<Pod?> GetPodAsync(string name, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(_server.Get<Pod>(name));
+    }
+
+    public Task DeletePodAsync(string name, CancellationToken cancellationToken)
+    {
+        _server.Delete<Pod>(name);
+        return Task.CompletedTask;
+    }
+
+    public Task<PortForward> PodForwardAsync(string name, int port, CancellationToken cancellationToken)
+    {
+        throw new NotSupportedException();
+    }
+
+    public Task<RemoteProcess> PodExecAsync(string name, IEnumerable<string> command, CancellationToken cancellationToken)
+    {
+        throw new NotSupportedException();
+    }
 }

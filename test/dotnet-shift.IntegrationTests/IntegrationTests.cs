@@ -15,6 +15,7 @@ public class IntegrationTests : TestRunnerBase
 
         // Create a .NET project.
         await RunAsync("dotnet", "new", "web", "-o", projectDirectory, "-n", componentName);
+        UpdateCsProjFile(Path.Combine(projectDirectory, $"{componentName}.csproj"));
         File.WriteAllText(Path.Combine(projectDirectory, "Program.cs"), GenerateProgramCs("Reply1"));
 
         // Deploy the application.
@@ -54,6 +55,20 @@ public class IntegrationTests : TestRunnerBase
             },
             retryWhen: ex => ex is HttpRequestException re && re.StatusCode == HttpStatusCode.ServiceUnavailable,
             maxAttempts: 10);
+    }
+
+    private static void UpdateCsProjFile(string filename)
+    {
+        string content = File.ReadAllText(filename);
+
+        // Minimize the resources needed for the test pod.
+        string additionalProperties =
+        """
+            <K8sMemoryRequest>100M</K8sMemoryRequest>
+            <K8sMemoryLimit>100M</K8sMemoryLimit>
+        """;
+
+        File.WriteAllText(filename, content.Replace("</TargetFramework>", $"</TargetFramework>{additionalProperties}"));
     }
 
     private static string GenerateProgramCs(string reply)

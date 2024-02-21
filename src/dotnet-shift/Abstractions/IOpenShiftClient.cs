@@ -52,4 +52,9 @@ interface IOpenShiftClient : IDisposable
     Task DeletePersistentVolumeClaimAsync(string name, CancellationToken cancellationToken);
     Task<PersistentVolumeClaim> PatchPersistentVolumeClaimAsync(PersistentVolumeClaim pvc, CancellationToken cancellationToken);
     Task<SecretList> ListSecretsAsync(string? labelSelector, string? fieldSelector, CancellationToken cancellationToken);
+    Task<Pod> CreatePodAsync(Pod pod, CancellationToken cancellationToken);
+    Task<Pod?> GetPodAsync(string name, CancellationToken cancellationToken);
+    Task<RemoteProcess> PodExecAsync(string name, IEnumerable<string> command, CancellationToken cancellationToken);
+    Task DeletePodAsync(string name, CancellationToken cancellationToken);
+    Task<PortForward> PodForwardAsync(string name, int port, CancellationToken cancellationToken);
 }
