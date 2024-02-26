@@ -1,6 +1,7 @@
 namespace CommandHandlers;
 
 using System;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 using OpenShift;
@@ -206,6 +207,22 @@ sealed partial class DeployHandler
         }
         string? publicRepository = s2iImageStream.Status.PublicDockerImageRepository;
 
+        if (!runningInCluster && publicRepository is not null)
+        {
+            // OpenShift Local registry runs with a certificate that the .NET SDK won't trust.
+            // Try reaching the registry over https, and fallback to a helper pod if there's an AuthenticationException (SSL not trusted).
+            try
+            {
+                using var httpClient = new HttpClient();
+                await httpClient.GetAsync($"https://{GetRegistryForPublicRepository(publicRepository)}");
+            }
+            catch (HttpRequestException ex) when (ex.InnerException is System.Security.Authentication.AuthenticationException)
+            {
+                // Fall back to the helper pod.
+                publicRepository = null;
+            }
+        }
+
         bool useHelperPod = !runningInCluster && publicRepository is null;
         await using HelperPod? helperPod = useHelperPod ? await StartHelperPodAsync(client, runtimeVersion, cancellationToken)
                                                         : null;
@@ -230,7 +247,7 @@ sealed partial class DeployHandler
             else
             {
                 Debug.Assert(publicRepository is not null);
-                registry = publicRepository.Substring(0, publicRepository.IndexOf('/'));
+                registry = GetRegistryForPublicRepository(publicRepository);
             }
             string? dockerConfig = await GetBuilderDockerConfigAsync(client, cancellationToken);
             if (dockerConfig is null)
@@ -307,6 +324,9 @@ sealed partial class DeployHandler
         Console.WriteLine($"Succesfully pushed image '{image}'");
 
         return image;
+
+        static string GetRegistryForPublicRepository(string publicRepository)
+            => publicRepository.Substring(0, publicRepository.IndexOf('/'));
     }
 
     private async Task<string?> GetBuilderDockerConfigAsync(IOpenShiftClient client, CancellationToken cancellationToken)
