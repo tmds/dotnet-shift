@@ -9,6 +9,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Yarp.ReverseProxy.Forwarder;
 using OpenShift;
+using System.Security.Cryptography.X509Certificates;
+using System.Net.Security;
 
 namespace CommandHandlers;
 
@@ -112,6 +114,24 @@ sealed partial class DeployHandler
             }
             catch
             { }
+        }
+
+        public async Task<X509Certificate2Collection> GetServiceCaBundleAsync(CancellationToken cancellationToken)
+        {
+            RemoteProcess process = await _client.PodExecAsync(_podName!, ["cat", "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"], cancellationToken);
+            MemoryStream stdout = new();
+            MemoryStream stderr = new();
+            await process.ReadToEndAsync(stdout, stderr, cancellationToken);
+
+            if (process.ExitCode != 0)
+            {
+                throw new ProcessFailedException(process.ExitCode, new StreamReader(stdout).ReadToEnd());
+            }
+
+            X509Certificate2Collection caCerts = new();
+            stdout.Position = 0;
+            caCerts.ImportFromPem(Encoding.ASCII.GetString(stdout.ToArray()));
+            return caCerts;
         }
 
         private async Task CopyFileAsync(string fileName, string targetFile, CancellationToken cancellationToken)
@@ -325,11 +345,14 @@ sealed partial class DeployHandler
         public class ProcessFailedException : System.Exception
         {
             public ProcessFailedException(int exitCode, StringBuilder processOutput) :
-                base($"Process failed with {exitCode}.{Environment.NewLine}{processOutput.ToString()}") 
+                this(exitCode, processOutput.ToString())
+            { }
+            public ProcessFailedException(int exitCode, string processOutput) :
+                base($"Process failed with {exitCode}.{Environment.NewLine}{processOutput}")
             { }
         }
 
-        public async Task<Uri> RemoteProxyToInternalRegistryAsync(CancellationToken cancellationToken)
+        public async Task<Uri> RemoteProxyToInternalRegistryAsync(X509Certificate2Collection serviceCaCerts, CancellationToken cancellationToken)
         {
             // The helper pod process forwards TCP port 5000 to image-registry.openshift-image-registry.svc:5000.
             RemoteProcess dotnetHelper = await StartDotNetHelperAsync(cancellationToken);
@@ -356,8 +379,37 @@ sealed partial class DeployHandler
                 ConnectTimeout = TimeSpan.FromSeconds(15),
                 SslOptions = new()
                 {
-                    // TODO: validate the cert.
-                    RemoteCertificateValidationCallback = delegate { return true; }
+                    RemoteCertificateValidationCallback = (object sender, X509Certificate? certificate, X509Chain? chain, SslPolicyErrors sslPolicyErrors) =>
+                    {
+                        if (sslPolicyErrors == SslPolicyErrors.None)
+                        {
+                            return true;
+                        }
+
+                        if ((sslPolicyErrors & SslPolicyErrors.RemoteCertificateChainErrors) != 0)
+                        {
+                            chain!.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+                            chain.ChainPolicy.ExtraStore.AddRange(serviceCaCerts);
+                            chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
+
+                            bool isValid = chain.Build((X509Certificate2)certificate!);
+                            if (!isValid)
+                            {
+                                return false;
+                            }
+
+                            foreach (var caCert in serviceCaCerts)
+                            {
+                                bool isTrusted = chain.Build(caCert);
+                                if (isTrusted)
+                                {
+                                    return true;
+                                }
+                            }
+                        }
+
+                        return false;
+                    }
                 },
                 ConnectCallback = async (SocketsHttpConnectionContext ctx, CancellationToken ct) =>
                 {
