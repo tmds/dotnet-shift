@@ -3,6 +3,7 @@ namespace CommandHandlers;
 using System;
 using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Nodes;
 using OpenShift;
 
@@ -239,7 +240,9 @@ sealed partial class DeployHandler
             if (useHelperPod)
             {
                 Debug.Assert(helperPod is not null);
-                Uri proxyUrl = await helperPod.RemoteProxyToInternalRegistryAsync(cancellationToken);
+                X509Certificate2Collection serviceCaCerts = await helperPod.GetServiceCaBundleAsync(cancellationToken);
+
+                Uri proxyUrl = await helperPod.RemoteProxyToInternalRegistryAsync(serviceCaCerts, cancellationToken);
                 Debug.Assert(proxyUrl.Host == "127.0.0.1");
                 // Change the url to 'localhost' because that is where the .NET SDK uses 'http' instead of 'https'.
                 registry = $"localhost:{proxyUrl.Port}";
