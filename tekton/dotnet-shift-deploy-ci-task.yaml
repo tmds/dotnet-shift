@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
-  name: dotnet-shift-deploy
+  name: dotnet-shift-deploy-ci
 spec:
   params:
     - name: SDK_VERSION
@@ -24,7 +24,7 @@ spec:
       image: image-registry.openshift-image-registry.svc:5000/$(context.taskRun.namespace)/dotnet:$(params.SDK_VERSION)
       workingDir: $(workspaces.source.path)
       script: |
-        dotnet tool update -g dotnet-shift >/dev/null
+        dotnet tool update -g dotnet-shift --prerelease --add-source https://www.myget.org/F/tmds/api/v3/index.json >/dev/null
 
         args=()
         [ -n "$(params.NAME)" ] && args+=(--name "$(params.NAME)")
