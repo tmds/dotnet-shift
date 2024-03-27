@@ -8,12 +8,175 @@ using System.Text.Json;
 
 namespace OpenShift
 {
+    enum ProcessReadType
+    {
+        StandardOutput = 1,
+        StandardError = 2,
+        ProcessExit = 3,
+    }
+
+    struct ProcessReadResult
+    {
+        public ProcessReadResult(ProcessReadType type, int value)
+        {
+            Type = type;
+            _value = value;
+        }
+
+        private int _value;
+
+        public ProcessReadType Type { get; }
+        public int BytesRead => Type == ProcessReadType.ProcessExit ? 0 : _value;
+        public int ExitCode => Type == ProcessReadType.ProcessExit ? _value : 0;
+    }
+
+    interface IProcessInputOutput : IDisposable
+    {
+        ValueTask WriteStandardInputAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default);
+        ValueTask<ProcessReadResult> ReadAsync(Memory<byte>? stdoutBuffer, Memory<byte>? stderrBuffer, CancellationToken cancellationToken = default);
+    }
+
+    class WebSocketRemoteProcess : IProcessInputOutput
+    {
+        private readonly WebSocket _webSocket;
+        private readonly byte[] _currentReadType = new byte[1];
+        private int? _exitCode;
+
+        enum WebSocketReadType
+        {
+            None = 0,
+            StandardOutput = 1,
+            StandardError = 2,
+            Exited = 3,
+        }
+
+        public WebSocketRemoteProcess(WebSocket webSocket) { _webSocket = webSocket; }
+
+        public void Dispose()
+        {
+            _webSocket.Dispose();
+        }
+
+        public async ValueTask<ProcessReadResult> ReadAsync(Memory<byte>? stdoutBuffer, Memory<byte>? stderrBuffer, CancellationToken cancellationToken = default)
+        {
+            byte[]? rentedBuffer = null;
+            try
+            {
+                while (true)
+                {
+                    ValueWebSocketReceiveResult receiveResult;
+                    WebSocketReadType currentReadType = (WebSocketReadType)_currentReadType[0];
+
+                    if (currentReadType == WebSocketReadType.None)
+                    {
+                        receiveResult = await _webSocket.ReceiveAsync(_currentReadType.AsMemory(0, 1), cancellationToken);
+
+                        if (receiveResult.MessageType == WebSocketMessageType.Close)
+                        {
+                            Debug.Assert(receiveResult.Count == 0);
+                            return new ProcessReadResult(ProcessReadType.ProcessExit, _exitCode ?? -1);
+                        }
+
+                        Debug.Assert(receiveResult.Count > 0);
+
+                        currentReadType = (WebSocketReadType)_currentReadType[0];
+                        if (receiveResult.EndOfMessage)
+                        {
+                            _currentReadType[0] = (byte)WebSocketReadType.None;
+                            continue;
+                        }
+                    }
+
+                    Memory<byte> receiveBuffer = currentReadType switch
+                    {
+                        WebSocketReadType.StandardOutput => stdoutBuffer,
+                        WebSocketReadType.StandardError => stderrBuffer,
+                        _ => null
+                    } ?? (rentedBuffer ??= ArrayPool<byte>.Shared.Rent(4096));
+
+                    receiveResult = await _webSocket.ReceiveAsync(receiveBuffer, cancellationToken);
+
+                    if (receiveResult.MessageType == WebSocketMessageType.Close)
+                    {
+                        return new ProcessReadResult(ProcessReadType.ProcessExit, _exitCode ?? -1);
+                    }
+
+                    if (receiveResult.EndOfMessage)
+                    {
+                        _currentReadType[0] = (byte)WebSocketReadType.None;
+                    }
+
+                    if (receiveResult.Count > 0)
+                    {
+                        if (currentReadType == WebSocketReadType.StandardOutput && !stdoutBuffer.HasValue)
+                        {
+                            return new ProcessReadResult(ProcessReadType.StandardOutput, receiveResult.Count);
+                        }
+                        else if (currentReadType == WebSocketReadType.StandardError && !stderrBuffer.HasValue)
+                        {
+                            return new ProcessReadResult(ProcessReadType.StandardError, receiveResult.Count);
+                        }
+                        else if (currentReadType == WebSocketReadType.Exited)
+                        {
+                            if (!receiveResult.EndOfMessage)
+                            {
+                                throw new NotSupportedException();
+                            }
+                            JsonDocument doc = JsonDocument.Parse(Encoding.UTF8.GetString(receiveBuffer.Span.Slice(0, receiveResult.Count)));
+                            string status = doc.RootElement.GetProperty("status").GetString()!;
+                            if (status == "Success")
+                            {
+                                // {"metadata":{},"status":"Success"}
+                                _exitCode = 0;
+                            }
+                            else if (status == "Failure")
+                            {
+                                // {"metadata":{},"status":"Failure","message":"command terminated with non-zero exit code: exit status 255","reason":"NonZeroExitCode","details":{"causes":[{"reason":"ExitCode","message":"255"}]}}
+                                if (doc.RootElement.TryGetProperty("details", out JsonElement details) &&
+                                    details.TryGetProperty("causes", out JsonElement causes) &&
+                                    causes.EnumerateArray() is var causeItems &&
+                                    causeItems.FirstOrDefault(item => item.TryGetProperty("reason", out JsonElement reason) && reason.GetString() == "ExitCode") is var reason)
+                                {
+                                    _exitCode = int.Parse(reason.GetProperty("message").GetString()!);
+                                }
+                                _exitCode ??= -1;
+                            }
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                if (rentedBuffer != null)
+                {
+                    ArrayPool<byte>.Shared.Return(rentedBuffer);
+                }
+            }
+        }
+
+        public async ValueTask WriteStandardInputAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var sendBuffer = ArrayPool<byte>.Shared.Rent(buffer.Length + 1);
+
+            try
+            {
+                sendBuffer[0] = 0; // stdin
+                buffer.CopyTo(sendBuffer.AsMemory(1));
+                await _webSocket.SendAsync(sendBuffer.AsMemory(0, buffer.Length + 1), WebSocketMessageType.Binary, true, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(sendBuffer);
+            }
+        }
+    }
+
     public class RemoteProcess
     {
         internal static readonly UTF8Encoding DefaultEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         private const int BufferSize = 1024;
 
-        private readonly WebSocket _webSocket;
+        private readonly IProcessInputOutput _processInputOutput;
         private readonly Encoding _standardInputEncoding = DefaultEncoding;
         private readonly Encoding _standardErrorEncoding = DefaultEncoding;
         private readonly Encoding _standardOutputEncoding = DefaultEncoding;
@@ -22,11 +185,10 @@ namespace OpenShift
         private int? _exitCode;
         private bool _skippingStdout;
         private bool _skippingStderr;
-        private readonly byte[] _currentReadType = new byte[1];
 
         internal RemoteProcess(WebSocket websocket)
         {
-            _webSocket = websocket;
+            _processInputOutput = new WebSocketRemoteProcess(websocket);
         }
 
         struct CharBuffer
@@ -225,18 +387,7 @@ namespace OpenShift
         {
             ThrowIfDisposed();
 
-            var sendBuffer = ArrayPool<byte>.Shared.Rent(buffer.Length + 1);
-
-            try
-            {
-                sendBuffer[0] = 0; // stdin
-                buffer.CopyTo(sendBuffer.AsMemory(1));
-                await _webSocket.SendAsync(sendBuffer.AsMemory(0, buffer.Length + 1), WebSocketMessageType.Binary, true, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(sendBuffer);
-            }
+            await _processInputOutput.WriteStandardInputAsync(buffer, cancellationToken);
         }
 
         public async ValueTask WriteAsync(ReadOnlyMemory<char> buffer, CancellationToken cancellationToken = default)
@@ -303,7 +454,7 @@ namespace OpenShift
         public StreamWriter StandardInputWriter
             => (_stdInWriter ??= new StreamWriter(new StdInStream(this), _standardInputEncoding) { AutoFlush = true, NewLine = "\n" });
 
-        private async ValueTask<(WebSocketReadType ReadType, int bytesRead)> ReadCore(Memory<byte>? stdoutBuffer, Memory<byte>? stderrBuffer, CancellationToken cancellationToken)
+        private async ValueTask<(ProcessReadType ReadType, int bytesRead)> ReadCore(Memory<byte>? stdoutBuffer, Memory<byte>? stderrBuffer, CancellationToken cancellationToken)
         {
             if (stdoutBuffer is { Length: 0 })
             {
@@ -330,101 +481,12 @@ namespace OpenShift
                 throw new InvalidOperationException("Process has exited");
             }
 
-            byte[]? rentedBuffer = null;
-            try
+            var result = await _processInputOutput.ReadAsync(stdoutBuffer, stderrBuffer, cancellationToken);
+            if (result.Type == ProcessReadType.ProcessExit)
             {
-                while (true)
-                {
-                    ValueWebSocketReceiveResult receiveResult;
-                    WebSocketReadType currentReadType = (WebSocketReadType)_currentReadType[0];
-
-                    if (currentReadType == WebSocketReadType.None)
-                    {
-                        receiveResult = await _webSocket.ReceiveAsync(_currentReadType.AsMemory(0, 1), cancellationToken);
-
-                        if (receiveResult.MessageType == WebSocketMessageType.Close)
-                        {
-                            Debug.Assert(receiveResult.Count == 0);
-                            _readMode = ReadMode.Exited;
-                            return (WebSocketReadType.Exited, 0);
-                        }
-
-                        Debug.Assert(receiveResult.Count > 0);
-
-                        currentReadType = (WebSocketReadType)_currentReadType[0];
-                        if (receiveResult.EndOfMessage)
-                        {
-                            _currentReadType[0] = (byte)WebSocketReadType.None;
-                            continue;
-                        }
-                    }
-
-                    Memory<byte> receiveBuffer = currentReadType switch
-                    {
-                        WebSocketReadType.StandardOutput => stdoutBuffer,
-                        WebSocketReadType.StandardError => stderrBuffer,
-                        _ => null
-                    } ?? (rentedBuffer ??= ArrayPool<byte>.Shared.Rent(4096));
-
-                    receiveResult = await _webSocket.ReceiveAsync(receiveBuffer, cancellationToken);
-
-                    if (receiveResult.MessageType == WebSocketMessageType.Close)
-                    {
-                        _readMode = ReadMode.Exited;
-                        return (WebSocketReadType.Exited, 0);
-                    }
-
-                    if (receiveResult.EndOfMessage)
-                    {
-                        _currentReadType[0] = (byte)WebSocketReadType.None;
-                    }
-
-                    if (receiveResult.Count > 0)
-                    {
-                        if (currentReadType == WebSocketReadType.StandardOutput && !_skippingStdout)
-                        {
-                            return (WebSocketReadType.StandardOutput, receiveResult.Count);
-                        }
-                        else if (currentReadType == WebSocketReadType.StandardError && !_skippingStderr)
-                        {
-                            return (WebSocketReadType.StandardError, receiveResult.Count);
-                        }
-                        else if (currentReadType == WebSocketReadType.Exited)
-                        {
-                            if (!receiveResult.EndOfMessage)
-                            {
-                                throw new NotSupportedException();
-                            }
-                            JsonDocument doc = JsonDocument.Parse(Encoding.UTF8.GetString(receiveBuffer.Span.Slice(0, receiveResult.Count)));
-                            string status = doc.RootElement.GetProperty("status").GetString()!;
-                            if (status == "Success")
-                            {
-                                // {"metadata":{},"status":"Success"}
-                                _exitCode = 0;
-                            }
-                            else if (status == "Failure")
-                            {
-                                // {"metadata":{},"status":"Failure","message":"command terminated with non-zero exit code: exit status 255","reason":"NonZeroExitCode","details":{"causes":[{"reason":"ExitCode","message":"255"}]}}
-                                if (doc.RootElement.TryGetProperty("details", out JsonElement details) &&
-                                    details.TryGetProperty("causes", out JsonElement causes) &&
-                                    causes.EnumerateArray() is var causeItems &&
-                                    causeItems.FirstOrDefault(item => item.TryGetProperty("reason", out JsonElement reason) && reason.GetString() == "ExitCode") is var reason)
-                                {
-                                    _exitCode = int.Parse(reason.GetProperty("message").GetString()!);
-                                }
-                            }
-                            _exitCode ??= -1;
-                        }
-                    }
-                }
+                _exitCode = result.ExitCode;
             }
-            finally
-            {
-                if (rentedBuffer != null)
-                {
-                    ArrayPool<byte>.Shared.Return(rentedBuffer);
-                }
-            }
+            return (result.Type, result.BytesRead);
         }
 
         public async ValueTask<(bool isError, int bytesRead)> ReadAsync(Memory<byte>? stdoutBuffer, Memory<byte>? stderrBuffer, CancellationToken cancellationToken = default)
@@ -433,14 +495,14 @@ namespace OpenShift
 
             while (true)
             {
-                (WebSocketReadType ReadType, int BytesRead) = await ReadCore(stdoutBuffer, stderrBuffer, cancellationToken).ConfigureAwait(false);
+                (ProcessReadType ReadType, int BytesRead) = await ReadCore(stdoutBuffer, stderrBuffer, cancellationToken).ConfigureAwait(false);
                 switch (ReadType)
                 {
-                    case WebSocketReadType.StandardOutput:
+                    case ProcessReadType.StandardOutput:
                         return (false, BytesRead);
-                    case WebSocketReadType.StandardError:
+                    case ProcessReadType.StandardError:
                         return (true, BytesRead);
-                    case WebSocketReadType.Exited:
+                    case ProcessReadType.ProcessExit:
                         _readMode = ReadMode.Exited;
                         return (false, 0);
                     default:
@@ -512,16 +574,16 @@ namespace OpenShift
             {
                 do
                 {
-                    (WebSocketReadType readType, int bytesRead) = await ReadCore(stdoutBuffer, stderrBuffer, cancellationToken).ConfigureAwait(false); ;
-                    if (readType == WebSocketReadType.StandardOutput)
+                    (ProcessReadType readType, int bytesRead) = await ReadCore(stdoutBuffer, stderrBuffer, cancellationToken).ConfigureAwait(false); ;
+                    if (readType == ProcessReadType.StandardOutput)
                     {
                         await handleStdout!(stdoutBuffer!.Value.Slice(0, bytesRead), stdoutContext, cancellationToken).ConfigureAwait(false);
                     }
-                    else if (readType == WebSocketReadType.StandardError)
+                    else if (readType == ProcessReadType.StandardError)
                     {
                         await handleStderr!(stderrBuffer!.Value.Slice(0, bytesRead), stderrContext, cancellationToken).ConfigureAwait(false);
                     }
-                    else if (readType == WebSocketReadType.Exited)
+                    else if (readType == ProcessReadType.ProcessExit)
                     {
                         _readMode = ReadMode.Exited;
                         return;
@@ -626,28 +688,30 @@ namespace OpenShift
                     _stderrBuffer.Initialize(_standardErrorEncoding);
                 }
             }
-            (WebSocketReadType readType, int bytesRead) = await ReadCore(readStdout ? _byteBuffer : default(Memory<byte>?),
+            (ProcessReadType readType, int bytesRead) = await ReadCore(readStdout ? _byteBuffer : default(Memory<byte>?),
                                                                                  readStderr ? _byteBuffer : default(Memory<byte>?), cancellationToken)
-                                                                                 .ConfigureAwait(false); ;
+                                                                                 .ConfigureAwait(false);
             switch (readType)
             {
-                case WebSocketReadType.StandardOutput:
+                case ProcessReadType.StandardOutput:
                     _stdoutBuffer.AppendFromEncoded(_byteBuffer.AsSpan(0, bytesRead));
-                    return ProcessReadType.StandardOutput;
-                case WebSocketReadType.StandardError:
+                    break;
+                case ProcessReadType.StandardError:
                     _stderrBuffer.AppendFromEncoded(_byteBuffer.AsSpan(0, bytesRead));
-                    return ProcessReadType.StandardError;
-                case WebSocketReadType.Exited:
-                    return ProcessReadType.ProcessExit;
+                    break;
+                case ProcessReadType.ProcessExit:
+                    break;
                 default:
                     throw new InvalidOperationException($"Unknown type: {readType}.");
             }
+
+            return readType;
         }
 
         public void Dispose()
         {
             _readMode = ReadMode.Disposed;
-            _webSocket.Dispose();
+            _processInputOutput.Dispose();
         }
 
         private void CheckReadMode(ReadMode readMode)
@@ -742,21 +806,6 @@ namespace OpenShift
                 // TODO: maybe wrap in IOException.
                 return _process.WriteAsync(buffer, cancellationToken);
             }
-        }
-
-        enum ProcessReadType
-        {
-            StandardOutput = 1,
-            StandardError = 2,
-            ProcessExit = 3,
-        }
-
-        enum WebSocketReadType
-        {
-            None = 0,
-            StandardOutput = 1,
-            StandardError = 2,
-            Exited = 3,
         }
     }
 }
