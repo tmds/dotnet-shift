@@ -4,6 +4,7 @@ using System;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using OpenShift;
 
@@ -295,28 +296,57 @@ sealed partial class DeployHandler
         Console.WriteLine();
         Console.WriteLine($"Publishing application image to image registry...");
         Dictionary<string, string>? envvars = null;
-        if (registryUserName is not null && registryPassword is not null)
+        DirectoryInfo? authDirectory = null;
+        try
         {
-            envvars = new()
+            if (registryUserName is not null && registryPassword is not null)
             {
-                { "SDK_CONTAINER_REGISTRY_UNAME", registryUserName },
-                { "SDK_CONTAINER_REGISTRY_PWORD", registryPassword }
-            };
+                // Use a temp directory that only the user can access to pass credentials to the SDK.
+                authDirectory = Directory.CreateTempSubdirectory();
+
+                var authsObject = new
+                {
+                    auths = new Dictionary<string, object>
+                    {
+                        { registry, new { auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{registryUserName}:{registryPassword}")) } }
+                    }
+                };
+                string authFileFilename = Path.Combine(authDirectory.FullName, "auth.json");
+                using var stream = File.OpenWrite(authFileFilename);
+                JsonSerializer.Serialize(stream, authsObject);
+
+                envvars = new()
+                {
+                    { "REGISTRY_AUTH_FILE", authFileFilename }
+                };
+            }
+            rv = await RunDotnetAsync(
+                new[] {
+                    "publish",
+                    "/p:PublishProfile=DefaultContainer",
+                    $"/p:ContainerRegistry={registry}",
+                    $"/p:ContainerRepository={repository}",
+                    $"/p:ContainerImageTag={tag}",
+                    $"/p:ContainerBaseImage={containerBaseImage}",
+                    "--getProperty:GeneratedContainerDigest",
+                    projectFile
+                },
+                envvars,
+                stdout, cancellationToken
+            );
         }
-        rv = await RunDotnetAsync(
-            new[] {
-                "publish",
-                "/p:PublishProfile=DefaultContainer",
-                $"/p:ContainerRegistry={registry}",
-                $"/p:ContainerRepository={repository}",
-                $"/p:ContainerImageTag={tag}",
-                $"/p:ContainerBaseImage={containerBaseImage}",
-                "--getProperty:GeneratedContainerDigest",
-                projectFile
-            },
-            envvars,
-            stdout, cancellationToken
-        );
+        finally
+        {
+            if (authDirectory is not null)
+            {
+                try
+                {
+                    authDirectory.Delete(true);
+                }
+                catch
+                { }
+            }
+        }
 
         if (rv != -0)
         {
