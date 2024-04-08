@@ -61,7 +61,7 @@ sealed partial class DeployHandler
             Console = console;
         }
 
-        private async Task<RemoteProcess> StartDotNetHelperAsync(CancellationToken cancellationToken)
+        private async Task<Process> StartDotNetHelperAsync(CancellationToken cancellationToken)
         {
             await _semaphore.WaitAsync(cancellationToken);
             try
@@ -81,7 +81,7 @@ sealed partial class DeployHandler
             return await ExecAsync(["dotnet", "/tmp/dsh/dsh.dll"], cancellationToken);
         }
 
-        private Task<RemoteProcess> ExecAsync(IEnumerable<string> command, CancellationToken cancellationToken)
+        private Task<Process> ExecAsync(IEnumerable<string> command, CancellationToken cancellationToken)
             => _client.PodExecAsync(_podName!, command, cancellationToken);
 
         private Task<PortForward> PortForwardAsync(int port, CancellationToken cancellationToken)
@@ -118,7 +118,7 @@ sealed partial class DeployHandler
 
         public async Task<X509Certificate2Collection> GetServiceCaBundleAsync(CancellationToken cancellationToken)
         {
-            RemoteProcess process = await _client.PodExecAsync(_podName!, ["cat", "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"], cancellationToken);
+            Process process = await _client.PodExecAsync(_podName!, ["cat", "/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"], cancellationToken);
             MemoryStream stdout = new();
             MemoryStream stderr = new();
             await process.ReadToEndAsync(stdout, stderr, cancellationToken);
@@ -145,7 +145,7 @@ sealed partial class DeployHandler
             ms.Position = 0;
 
             // Use 'dd' to inject an EOF at the end of the archive.
-            RemoteProcess process = await _client.PodExecAsync(_podName!, ["/bin/sh", "-c", $"dd count={length} iflag=count_bytes  | tar xmf - -C /"], cancellationToken);
+            Process process = await _client.PodExecAsync(_podName!, ["/bin/sh", "-c", $"dd count={length} iflag=count_bytes  | tar xmf - -C /"], cancellationToken);
 
             try
             {
@@ -324,7 +324,7 @@ sealed partial class DeployHandler
             }
         }
 
-        private async Task WaitForExitSuccess(RemoteProcess process, CancellationToken ct)
+        private async Task WaitForExitSuccess(Process process, CancellationToken ct)
         {
             StringBuilder sb = new();
             while (true)
@@ -355,7 +355,7 @@ sealed partial class DeployHandler
         public async Task<Uri> RemoteProxyToInternalRegistryAsync(X509Certificate2Collection serviceCaCerts, CancellationToken cancellationToken)
         {
             // The helper pod process forwards TCP port 5000 to image-registry.openshift-image-registry.svc:5000.
-            RemoteProcess dotnetHelper = await StartDotNetHelperAsync(cancellationToken);
+            Process dotnetHelper = await StartDotNetHelperAsync(cancellationToken);
 
             // Use YARP to proxy from http localhost to the helper pod.
             var builder = WebApplication.CreateBuilder();

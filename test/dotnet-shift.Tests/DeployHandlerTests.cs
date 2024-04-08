@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Spectre.Console;
 using Spectre.Console.Testing;
+using System.Text;
 
 [UsesVerify]
 public class DeployHandlerTests : IDisposable
@@ -46,9 +47,9 @@ public class DeployHandlerTests : IDisposable
                         bool followArg = false,
                         bool startBuildArg = false,
                         CancellationToken cancellationTokenArg = default,
-
                         string? workingDirectory = null,
                         ProjectInformation? projectInfo = null,
+                        MockProcessRunner.RunProcess? runProcess = null,
                         GitRepoInfo? repoInfo = null,
                         IAnsiConsole? console = null)
     {
@@ -76,9 +77,14 @@ public class DeployHandlerTests : IDisposable
                 AssemblyName = "web"
             };
 
-        MockOpenShiftClientFactory clientFactory = new(server);
+        MockOpenShiftClientFactory clientFactory = new(server, login.Namespace);
         MockProjectReader projectReader = new(projectInfo);
         MockGitRepoReader repoReader = new(repoInfo);
+        if (runProcess is null)
+        {
+            runProcess = delegate { throw new NotSupportedException(); };
+        }
+        MockProcessRunner processRunner = new(runProcess);
         console ??= new TestConsole();
         ILogger logger = NullLogger.Instance;
 
@@ -88,13 +94,14 @@ public class DeployHandlerTests : IDisposable
             workingDirectory: workingDirectory,
             clientFactory,
             projectReader,
-            repoReader
+            repoReader,
+            processRunner
            );
 
         return handler.ExecuteAsync(login, projectArg, nameArg, partOfArg, exposeArg, followArg, startBuildArg, cancellationTokenArg);
     }
 
-    // [Fact]
+    [Fact]
     public async Task SuccessfulDeploymentWithFollow()
     {
         const string MyNamespace = "mynamespace";
@@ -107,6 +114,8 @@ public class DeployHandlerTests : IDisposable
         AddBuildCompletedCompletedController(server, $"{MyComponentName}-binary-0", ImageRegistry, ImageSha);
         AddImageDeploymentCompletedController(server, MyComponentName, $"{ImageRegistry}@{ImageSha}");
         AddSetRouteHostController(server, MyComponentName, "myroutehost");
+        AddBuilderRegistrySecret(server);
+        AddPodController(server);
 
         Recorder recorder = new(new TestConsole());
         int rv = await DeployAsync(server,
@@ -124,15 +133,16 @@ public class DeployHandlerTests : IDisposable
                 RemoteUrl = "http://myurl"
             },
             startBuildArg: true, followArg: true,
-            console: recorder
+            console: recorder,
+            runProcess: CreateProcessRunForImageSha(ImageSha)
             );
 
-        Assert.Equal(0, rv);
-
         await Verify(recorder.ExportText());
+
+        Assert.Equal(0, rv);
     }
 
-    // [Fact]
+    [Fact]
     public async Task ResourcesOnCreate()
     {
         const string MyNamespace = "mynamespace";
@@ -142,6 +152,8 @@ public class DeployHandlerTests : IDisposable
         using MockOpenShiftServer server = new();
         AddDotnetImageStreamAvailableController(server);
         AddBuildCompletedCompletedController(server, $"{MyComponentName}-binary-0", ImageRegistry, ImageSha);
+        AddBuilderRegistrySecret(server);
+        AddPodController(server);
 
         int rv = await DeployAsync(server,
             nameArg: MyComponentName,
@@ -157,7 +169,8 @@ public class DeployHandlerTests : IDisposable
                 RemoteBranch = "mybranch1",
                 RemoteUrl = "http://myurl"
             },
-            startBuildArg: true, followArg: false
+            startBuildArg: true, followArg: false,
+            runProcess: CreateProcessRunForImageSha(ImageSha)
             );
 
         Assert.Equal(0, rv);
@@ -183,6 +196,67 @@ public class DeployHandlerTests : IDisposable
                     });
                 }
             });
+        server.AddController(
+            "dotnet-runtime",
+            (ImageStream stream) =>
+            {
+                // Create a status tag with item so the handler assumes the dotnet version image is available.
+                stream.Status ??= new();
+                stream.Status.Tags ??= new();
+                foreach (var tag in stream.Spec.Tags)
+                {
+                    stream.Status.Tags.Add(new()
+                    {
+                        Tag = tag.Name,
+                        Items = new() { new() { } }
+                    });
+                }
+            });
+    }
+
+    private static void AddBuilderRegistrySecret(MockOpenShiftServer server)
+    {
+        server.Create<Secret>("builder-dockercfg-test", new Secret()
+        {
+            Type = "type=kubernetes.io/dockercfg",
+            Metadata = new()
+            {
+                Name = "builder-dockercfg-test",
+                Annotations = new Dictionary<string, string>()
+                {
+                    { "kubernetes.io/service-account.name", "builder" }
+                }
+            },
+            Data = new Dictionary<string, byte[]>()
+            {
+                { ".dockercfg", Encoding.UTF8.GetBytes(
+                    """
+                    {
+                        "image-registry.openshift-image-registry.svc:5000": {
+                            "username": "serviceaccount",
+                            "password": "secret123",
+                            "email": "serviceaccount@example.org"
+                        }
+                    }
+                    """
+                ) }
+            }
+        });
+    }
+
+    private static void AddPodController(MockOpenShiftServer server)
+    {
+        server.AddController(
+            (Pod pod) =>
+            {
+                // Create a status tag with item so the handler assumes the dotnet version image is available.
+                pod.Status ??= new();
+                pod.Status.Phase = PodStatusPhase.Running;
+            });
+        server.ExecutePodCommand = (Pod pod, IEnumerable<string> command, CancellationToken cancellationToken) =>
+        {
+            return new MockProcess();
+        };
     }
 
     private static void AddImageDeploymentCompletedController(MockOpenShiftServer server, string deployment, string deployedImage)
@@ -231,7 +305,24 @@ public class DeployHandlerTests : IDisposable
             });
     }
 
-    // [Fact]
+    private static MockProcessRunner.RunProcess CreateProcessRunForImageSha(string imageSha)
+    {
+        return (string filename, IEnumerable<string> args, IDictionary<string, string?>? envvars) =>
+        {
+            string stdout;
+            if (filename == "dotnet" && args.Contains("/p:PublishProfile=DefaultContainer") && args.Contains("--getProperty:GeneratedContainerDigest"))
+            {
+                stdout = imageSha;
+            }
+            else
+            {
+                stdout = $"Running {filename} {string.Join(" ", args)}.";
+            }
+            return new MockProcess(stdout: stdout);
+        };
+    }
+
+    [Fact]
     public async Task ResourcesOnUpdate()
     {
         const string MyNamespace = "mynamespace";
@@ -241,6 +332,8 @@ public class DeployHandlerTests : IDisposable
         using MockOpenShiftServer server = new();
         AddDotnetImageStreamAvailableController(server);
         AddBuildCompletedCompletedController(server, $"{MyComponentName}-binary-0", ImageRegistry, ImageSha);
+        AddBuilderRegistrySecret(server);
+        AddPodController(server);
 
         int rv = await DeployAsync(server,
             nameArg: MyComponentName,
@@ -256,7 +349,8 @@ public class DeployHandlerTests : IDisposable
                 RemoteBranch = "mybranch_1",
                 RemoteUrl = "http://myurl_1"
             },
-            startBuildArg: true);
+            startBuildArg: true,
+            runProcess: CreateProcessRunForImageSha(ImageSha));
         Assert.Equal(0, rv);
 
         rv = await DeployAsync(server,

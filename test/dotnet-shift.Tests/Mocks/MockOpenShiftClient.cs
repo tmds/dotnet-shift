@@ -4,9 +4,10 @@ sealed class MockOpenShiftClient : IOpenShiftClient
 {
     private readonly MockOpenShiftServer _server;
 
-    public MockOpenShiftClient(MockOpenShiftServer server)
+    public MockOpenShiftClient(MockOpenShiftServer server, string @namespace)
     {
         _server = server;
+        Namespace = @namespace;
     }
 
     public Task<BuildConfig> CreateBuildConfigAsync(BuildConfig buildConfig, CancellationToken cancellationToken)
@@ -177,7 +178,7 @@ sealed class MockOpenShiftClient : IOpenShiftClient
     public Task<Service> ReplaceServiceAsync(Service value, CancellationToken cancellationToken)
         => Task.FromResult(_server.Replace(value.Metadata.Name, value));
 
-    public string Namespace => throw new NotImplementedException();
+    public string Namespace { get; }
 
     public Task<User> GetUserAsync(CancellationToken cancellationToken)
     {
@@ -191,7 +192,7 @@ sealed class MockOpenShiftClient : IOpenShiftClient
         => Task.FromResult(_server.StartBinaryBuild(buildConfigName, archiveStream));
 
     public Task<SecretList> ListSecretsAsync(string? labelSelector, string? fieldSelector, CancellationToken cancellationToken)
-        => throw new NotSupportedException();
+        => Task.FromResult(new SecretList() { Items = _server.List<Secret>(null) });
 
     public void Dispose()
     { }
@@ -218,8 +219,9 @@ sealed class MockOpenShiftClient : IOpenShiftClient
         throw new NotSupportedException();
     }
 
-    public Task<RemoteProcess> PodExecAsync(string name, IEnumerable<string> command, CancellationToken cancellationToken)
+    public async Task<Process> PodExecAsync(string name, IEnumerable<string> command, CancellationToken cancellationToken)
     {
-        throw new NotSupportedException();
+        Pod pod = (await GetPodAsync(name, default))!;
+        return await _server.PodExecAsync(pod, command, cancellationToken);
     }
 }

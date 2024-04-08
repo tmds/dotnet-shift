@@ -14,7 +14,7 @@ partial class OpenShiftClient : IOpenShiftClient
     public Task DeletePodAsync(string name, CancellationToken cancellationToken)
         => DeleteCoreV1NamespacedPodAsync(name, Namespace, cancellationToken: cancellationToken);
 
-    public Task<RemoteProcess> PodExecAsync(string name, IEnumerable<string> command, CancellationToken cancellationToken)
+    public Task<Process> PodExecAsync(string name, IEnumerable<string> command, CancellationToken cancellationToken)
         => ConnectCoreV1NamespacedPodExecAsync(name, Namespace, command, cancellationToken: cancellationToken);
 
     public Task<PortForward> PodForwardAsync(string name, int port, CancellationToken cancellationToken)
@@ -336,7 +336,7 @@ partial class OpenShiftClient : IOpenShiftClient
         }
     }
 
-    private async System.Threading.Tasks.Task<RemoteProcess> ConnectCoreV1NamespacedPodExecAsync(string name, string @namespace, IEnumerable<string>? command = null, string? container = null, bool stderr = true, bool stdin = true, bool stdout = true, bool tty = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+    private async System.Threading.Tasks.Task<Process> ConnectCoreV1NamespacedPodExecAsync(string name, string @namespace, IEnumerable<string>? command = null, string? container = null, bool stderr = true, bool stdin = true, bool stdout = true, bool tty = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
     {
         if (name == null)
             throw new System.ArgumentNullException("name");
@@ -369,7 +369,7 @@ partial class OpenShiftClient : IOpenShiftClient
 
         await webSocket.ConnectAsync(new Uri(urlBuilder_.ToString()), cancellationToken);
 
-        return new RemoteProcess(webSocket);
+        return new WebSocketProcess(webSocket);
     }
 
     private async System.Threading.Tasks.Task<PortForward> ConnectCoreV1NamespacedPodPortforwardAsync(string name, string @namespace, int[] port, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))

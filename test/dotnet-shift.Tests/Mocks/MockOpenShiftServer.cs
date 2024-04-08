@@ -21,6 +21,8 @@ sealed partial class MockOpenShiftServer : IDisposable
 
     private readonly ConcurrentDictionary<(Type, string), IResourceController> _resources = new();
 
+    public Func<Pod, IEnumerable<string>, CancellationToken, Process>? ExecutePodCommand { get; set; }
+
     public void Dispose()
     { }
 
@@ -205,4 +207,7 @@ sealed partial class MockOpenShiftServer : IDisposable
         }
         throw new NotImplementedException();
     }
+
+    internal Task<Process> PodExecAsync(Pod value, IEnumerable<string> command, CancellationToken cancellationToken)
+        => Task.FromResult((ExecutePodCommand ?? throw new NotSupportedException()).Invoke(value, command, cancellationToken));
 }
