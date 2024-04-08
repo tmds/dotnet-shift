@@ -143,6 +143,11 @@ sealed partial class DeployHandler
                         {
                             Kind = "DockerImage",
                             Name = containerImage
+                        },
+                        // Poll the s2i image registry for updates.
+                        ImportPolicy = new()
+                        {
+                            Scheduled = true
                         }
                     }
                 }
