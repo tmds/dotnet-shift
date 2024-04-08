@@ -210,7 +210,7 @@ partial class AppCommandLine
                                 var parseResult = ctx.ParseResult;
 
                                 var handler = new DeployHandler(services.Console, services.Logger, services.WorkingDirectory,
-                                                    services.OpenShiftClientFactory, services.ProjectReader, services.GitRepoReader);
+                                                    services.OpenShiftClientFactory, services.ProjectReader, services.GitRepoReader, services.ProcessRunner);
 
                                 LoginContext loginContext = ctx.LoginContext!;
 

@@ -18,6 +18,7 @@ sealed partial class DeployHandler
     private IOpenShiftClientFactory OpenShiftClientFactory { get; }
     private IProjectReader ProjectReader { get; }
     private IGitRepoReader GitRepoReader { get; }
+    private IProcessRunner ProcessRunner { get; }
 
     // Let the user know something didn't happen after a short time.
     private TimeSpan ShortFeedbackTimeout => TimeSpan.FromSeconds(5);
@@ -25,7 +26,7 @@ sealed partial class DeployHandler
     // Fail the operation if there was no progress for a long time.
     private TimeSpan NoProgressTimeout => TimeSpan.FromSeconds(60);
 
-    public DeployHandler(IAnsiConsole console, ILogger logger, string workingDirectory, IOpenShiftClientFactory clientFactory, IProjectReader projectReader, IGitRepoReader gitRepoReader)
+    public DeployHandler(IAnsiConsole console, ILogger logger, string workingDirectory, IOpenShiftClientFactory clientFactory, IProjectReader projectReader, IGitRepoReader gitRepoReader, IProcessRunner processRunner)
     {
         Console = console;
         Logger = logger;
@@ -33,6 +34,7 @@ sealed partial class DeployHandler
         OpenShiftClientFactory = clientFactory;
         ProjectReader = projectReader;
         GitRepoReader = gitRepoReader;
+        ProcessRunner = processRunner;
     }
 
     sealed class ComponentResources
@@ -295,7 +297,7 @@ sealed partial class DeployHandler
 
         Console.WriteLine();
         Console.WriteLine($"Publishing application image to image registry...");
-        Dictionary<string, string>? envvars = null;
+        Dictionary<string, string?>? envvars = null;
         DirectoryInfo? authDirectory = null;
         try
         {
@@ -377,19 +379,9 @@ sealed partial class DeployHandler
         return null;
     }
 
-    private async Task<int> RunDotnetAsync(IEnumerable<string> arguments, IDictionary<string, string>? envvars, StringBuilder? stdout, CancellationToken cancellationToken)
+    private async Task<int> RunDotnetAsync(IEnumerable<string> arguments, IDictionary<string, string?>? envvars, StringBuilder? stdout, CancellationToken cancellationToken)
     {
-        Process process = new();
-        process.StartInfo.FileName = "dotnet";
-        process.StartInfo.RedirectStandardError = true;
-        process.StartInfo.RedirectStandardInput = true;
-        process.StartInfo.RedirectStandardOutput = true;
-
-        foreach (var arg in arguments)
-        {
-            process.StartInfo.ArgumentList.Add(arg);
-        }
-
+        envvars ??= new Dictionary<string, string?>();
         foreach (var envvar in new[] {
             "MSBuildExtensionsPath",
             "MSBuildSDKsPath",
@@ -398,47 +390,29 @@ sealed partial class DeployHandler
             "DOTNET_HOST_PATH"
         })
         {
-            process.StartInfo.EnvironmentVariables.Remove(envvar);
+            envvars[envvar] = null;
         }
 
-        if (envvars is not null)
+        Process process = ProcessRunner.Run("dotnet", arguments, envvars);
+
+        await foreach((bool isError, string line) in process.ReadAllLinesAsync().WithCancellation(cancellationToken))
         {
-            foreach (var envvar in envvars)
+            if (isError)
             {
-                process.StartInfo.EnvironmentVariables[envvar.Key] = envvar.Value;
+                Console.WriteLine(line);
             }
-        }
-
-        process.Start();
-
-        process.ErrorDataReceived += (sender, e) =>
-        {
-            if (e.Data is not null)
-            {
-                Console.WriteLine(e.Data);
-            }
-        };
-
-        process.OutputDataReceived += (sender, e) =>
-        {
-            if (e.Data is not null)
+            else
             {
                 if (stdout is null)
                 {
-                    Console.WriteLine(e.Data);
+                    Console.WriteLine(line);
                 }
                 else
                 {
-                    stdout?.AppendLine(e.Data);
+                    stdout?.AppendLine(line);
                 }
             }
-        };
-
-        process.StandardInput.Close();
-        process.BeginErrorReadLine();
-        process.BeginOutputReadLine();
-
-        await process.WaitForExitAsync(cancellationToken);
+        }
 
         return process.ExitCode;
     }
@@ -943,7 +917,7 @@ sealed partial class DeployHandler
                                   cancellationToken);
 
         bool useSDKBuild = runningInCluster || !string.IsNullOrEmpty(imageStream.Status?.PublicDockerImageRepository);
-        bool useS2iBuild = !useSDKBuild;
+        bool useS2iBuild = false; // !useSDKBuild;
 
         if (useS2iBuild || current.BinaryBuildConfig is not null)
         {

@@ -10,6 +10,7 @@ sealed class AppServices
     public IOpenShiftClientFactory OpenShiftClientFactory { get; }
     public IProjectReader ProjectReader { get; }
     public IGitRepoReader GitRepoReader { get; }
+    public IProcessRunner ProcessRunner { get; }
 
     public AppServices(
         AnsiConsoleSettings? consoleSettings = null,
@@ -41,5 +42,6 @@ sealed class AppServices
         OpenShiftClientFactory = openshiftClientFactory ?? new OpenShift.OpenShiftClientFactory();
         ProjectReader = projectReader ?? new MSBuild.ProjectReader();
         GitRepoReader = repoReader ?? new Git.GitRepoReader();
+        ProcessRunner = new ProcessRunner();
     }
 }

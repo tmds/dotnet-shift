@@ -1,49 +1,5 @@
 ﻿[
   {
-    ApiVersion: build.openshift.io/v1,
-    Kind: Build,
-    Metadata: {
-      Name: mycomponent-binary-0
-    }
-  },
-  {
-    ApiVersion: build.openshift.io/v1,
-    Kind: BuildConfig,
-    Metadata: {
-      Labels: {
-        app.kubernetes.io/component: mycomponent,
-        app.kubernetes.io/instance: myapp,
-        app.kubernetes.io/managed-by: dotnet-shift,
-        app.kubernetes.io/name: mycomponent,
-        app.kubernetes.io/part-of: myapp,
-        app.openshift.io/runtime: dotnet
-      },
-      Name: mycomponent-binary
-    },
-    Spec: {
-      FailedBuildsHistoryLimit: 5,
-      Output: {
-        To: {
-          Kind: ImageStreamTag,
-          Name: mycomponent:latest
-        }
-      },
-      Source: {
-        Type: Binary
-      },
-      Strategy: {
-        SourceStrategy: {
-          From: {
-            Kind: ImageStreamTag,
-            Name: dotnet:5.0
-          }
-        },
-        Type: Source
-      },
-      SuccessfulBuildsHistoryLimit: 5
-    }
-  },
-  {
     ApiVersion: apps/v1,
     Kind: Deployment,
     Metadata: {
@@ -101,20 +57,20 @@
     Kind: ImageStream,
     Metadata: {
       Annotations: {
-        openshift.io/display-name: .NET,
+        openshift.io/display-name: .NET Runtime,
         openshift.io/provider-display-name: Red Hat
       },
-      Name: dotnet
+      Name: dotnet-runtime
     },
     Spec: {
       Tags: [
         {
           Annotations: {
-            openshift.io/display-name: .NET 5.0
+            openshift.io/display-name: .NET Runtime 5.0
           },
           From: {
             Kind: DockerImage,
-            Name: registry.access.redhat.com/ubi8/dotnet-50:latest
+            Name: registry.access.redhat.com/ubi8/dotnet-50-runtime:latest
           },
           Name: 5.0,
           ReferencePolicy: {
@@ -161,6 +117,18 @@
         Name: mycomponent
       }
     }
+  },
+  {
+    Data: {
+      .dockercfg: ewogICAgImltYWdlLXJlZ2lzdHJ5Lm9wZW5zaGlmdC1pbWFnZS1yZWdpc3RyeS5zdmM6NTAwMCI6IHsKICAgICAgICAidXNlcm5hbWUiOiAic2VydmljZWFjY291bnQiLAogICAgICAgICJwYXNzd29yZCI6ICJzZWNyZXQxMjMiLAogICAgICAgICJlbWFpbCI6ICJzZXJ2aWNlYWNjb3VudEBleGFtcGxlLm9yZyIKICAgIH0KfQ==
+    },
+    Metadata: {
+      Annotations: {
+        kubernetes.io/service-account.name: builder
+      },
+      Name: builder-dockercfg-test
+    },
+    Type: type=kubernetes.io/dockercfg
   },
   {
     ApiVersion: v1,
