@@ -3,6 +3,7 @@ namespace Kubectl;
 using k8s;
 using k8s.KubeConfigModels;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography.X509Certificates;
 
 sealed class KubernetesConfigFile : ILoginContextRepository
 {
@@ -207,6 +208,11 @@ sealed class KubernetesConfigFile : ILoginContextRepository
         Cluster? cluster = config.Clusters.FirstOrDefault(c => c.Name == clusterId);
         string? server = cluster?.ClusterEndpoint.Server;
         bool skipTlsVerify = cluster?.ClusterEndpoint.SkipTlsVerify ?? false;
+        X509Certificate2Collection? caCerts = null;
+        if (cluster?.ClusterEndpoint?.CertificateAuthorityData is string caAuthData)
+        {
+            caCerts = new X509Certificate2Collection(new X509Certificate2(Convert.FromBase64String(caAuthData)));
+        }
 
         string userName = userId;
         if (userName.Contains('/'))
@@ -228,7 +234,8 @@ sealed class KubernetesConfigFile : ILoginContextRepository
                 Token = token,
                 Username = userName,
                 Namespace = ns,
-                SkipTlsVerify = skipTlsVerify
+                SkipTlsVerify = skipTlsVerify,
+                CACerts = caCerts
             };
         }
 
