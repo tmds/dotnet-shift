@@ -138,17 +138,8 @@ sealed partial class DeployHandler
                 await DisableImageStreamDeploymentTriggerAsync(client, resources.Deployment, cancellationToken);
             }
 
-            bool useS2iBuild = await UpdateBuildResourcesAsync(client, runningInCluster, resources, name, binaryBuildConfigName, appImageStreamTagName, runtimeVersion, partOf, cancellationToken);
-            // TODO: all builds use the SDK, remove the s2i build support.
-            useS2iBuild = false;
-            if (useS2iBuild)
-            {
-                appImage = await S2IBuildAsync(projectFile, contextDir, projectInfo, runtimeVersion, binaryBuildConfigName, client, resources, cancellationToken);
-            }
-            else
-            {
-                appImage = await SdkImageBuildAsync(client, runningInCluster, projectFile, appImageStreamTagName, runtimeVersion, resources, cancellationToken);
-            }
+            await ApplyAppImageStream(client, runningInCluster, resources, name, binaryBuildConfigName, appImageStreamTagName, runtimeVersion, partOf, cancellationToken);
+            appImage = await SdkImageBuildAsync(client, runningInCluster, projectFile, appImageStreamTagName, runtimeVersion, resources, cancellationToken);
             if (appImage is null)
             {
                 return CommandResult.Failure;
@@ -160,7 +151,7 @@ sealed partial class DeployHandler
         if (!doBuild)
         {
             // Keep build resources in sync also when we're not doing a build.
-            await UpdateBuildResourcesAsync(client, runningInCluster, resources, name, binaryBuildConfigName, appImageStreamTagName, runtimeVersion, partOf, cancellationToken);
+            await ApplyAppImageStream(client, runningInCluster, resources, name, binaryBuildConfigName, appImageStreamTagName, runtimeVersion, partOf, cancellationToken);
         }
         Route? route = await UpdateResourcesAsync(
                                     client, resources, name,
@@ -415,85 +406,6 @@ sealed partial class DeployHandler
         }
 
         return process.ExitCode;
-    }
-
-    private async Task<string?> S2IBuildAsync(string projectFile, string contextDir, ProjectInformation projectInfo, string runtimeVersion, string binaryBuildConfigName, IOpenShiftClient client, ComponentResources resources, CancellationToken cancellationToken)
-    {
-        // Ensure the s2i image for the .NET version is defined.
-        ImageStream? s2iImageStream = await ApplyDotnetImageStreamTag(
-                                        client,
-                                        DotnetImageStreamName,
-                                        resources.DotnetImageStream,
-                                        runtimeVersion,
-                                        cancellationToken);
-
-        // Ensure the s2i image is resolved.
-        if (!await CheckImageTagAvailable(client, s2iImageStream, runtimeVersion, cancellationToken))
-        {
-            return null;
-        }
-
-        // Upload sources and start the build.
-        Console.WriteLine($"Uploading sources from directory '{contextDir}'...");
-        Build? build = await StartBuildAsync(client, binaryBuildConfigName, contextDir, projectFile,
-                                             projectInfo.ContainerEnvironmentVariables, cancellationToken);
-
-        // Follow the build.
-        string buildName = build.Metadata.Name;
-        build = await FollowBuildAsync(client, buildName, cancellationToken);
-        if (build is null)
-        {
-            Console.WriteErrorLine($"The build '{buildName}' is missing.");
-            return null;
-        }
-        Debug.Assert(build.IsBuildFinished());
-
-        // Report build fail/success.
-        if (!CheckBuildNotFailed(build, out string? appImage))
-        {
-            return null;
-        }
-        Debug.Assert(appImage is not null);
-        return appImage;
-    }
-
-    private bool CheckBuildNotFailed(Build build, out string? builtImage)
-    {
-        builtImage = null;
-
-        string buildName = build.Metadata.Name;
-        if (build.IsBuildFinished())
-        {
-            if (!build.IsBuildSuccess())
-            {
-                BuildCondition? failureCondition = build.Status.Conditions?.FirstOrDefault(c => c.Type == build.Status.Phase);
-                string withReason = DescribeConditionAsWith(failureCondition);
-                switch (build.Status.Phase)
-                {
-                    case "Failed":
-                        Console.WriteErrorLine($"The build '{buildName}' failed{withReason}.");
-                        break;
-                    case "Error":
-                        Console.WriteErrorLine($"The build '{buildName}' failed to start{withReason}.");
-                        break;
-                    case "Cancelled":
-                        Console.WriteErrorLine($"The build '{buildName}' was cancelled{withReason}.");
-                        break;
-                    default: // unknown phase
-                        Console.WriteErrorLine($"The build '{buildName}' did not complete: {build.Status.Phase}{withReason}.");
-                        break;
-                }
-                return false;
-            }
-            else
-            {
-                string imageReference = build.Status.OutputDockerImageReference;
-                string imageDigest = build.Status.Output.To.ImageDigest;
-                builtImage = $"{imageReference.Substring(0, imageReference.LastIndexOf(':'))}@{imageDigest}";
-            }
-        }
-
-        return true;
     }
 
     private async Task<ComponentResources> GetDeployedResources(IOpenShiftClient client,
@@ -869,22 +781,6 @@ sealed partial class DeployHandler
         }
     }
 
-    private async Task<Build> StartBuildAsync(IOpenShiftClient client,
-                                              string binaryBuildConfigName,
-                                              string contextDir,
-                                              string projectFile,
-                                              Dictionary<string, string> environment,
-                                              CancellationToken cancellationToken)
-    {
-        Dictionary<string, string> buildEnvironment = new(environment);
-        // Add DOTNET_STARTUP_PROJECT.
-        AddStartupProject(buildEnvironment, contextDir, projectFile);
-
-        using Stream archiveStream = CreateApplicationArchive(contextDir, buildEnvironment);
-
-        return await client.StartBinaryBuildAsync(binaryBuildConfigName, archiveStream, cancellationToken);
-    }
-
     private async static ValueTask<string?> ReadLineAsync(StreamReader reader, CancellationToken cancellationToken)
     {
 #if NET7_0_OR_GREATER
@@ -896,16 +792,15 @@ sealed partial class DeployHandler
 #endif
     }
 
-    private async Task<bool> UpdateBuildResourcesAsync(
-                                            IOpenShiftClient client,
-                                            bool runningInCluster,
-                                            ComponentResources current,
-                                            string name,
-                                            string binaryBuildConfigName,
-                                            string appImageStreamTagName,
-                                            string runtimeVersion,
-                                            string partOf,
-                                            CancellationToken cancellationToken)
+    private async Task ApplyAppImageStream(IOpenShiftClient client,
+                                           bool runningInCluster,
+                                           ComponentResources current,
+                                           string name,
+                                           string binaryBuildConfigName,
+                                           string appImageStreamTagName,
+                                           string runtimeVersion,
+                                           string partOf,
+                                           CancellationToken cancellationToken)
     {
         Dictionary<string, string> componentLabels = GetComponentLabels(partOf, name);
         Dictionary<string, string> runtimeLabels = GetRuntimeLabels(runtimeVersion);
@@ -915,23 +810,6 @@ sealed partial class DeployHandler
                                   current.ImageStream,
                                   Merge(componentLabels, runtimeLabels),
                                   cancellationToken);
-
-        bool useSDKBuild = runningInCluster || !string.IsNullOrEmpty(imageStream.Status?.PublicDockerImageRepository);
-        bool useS2iBuild = false; // !useSDKBuild;
-
-        if (useS2iBuild || current.BinaryBuildConfig is not null)
-        {
-            await ApplyBinaryBuildConfig(
-                    client,
-                    binaryBuildConfigName,
-                    current.BinaryBuildConfig,
-                    appImageStreamTagName,
-                    s2iImageStreamTag: $"{DotnetImageStreamName}:{runtimeVersion}",
-                    Merge(componentLabels, runtimeLabels),
-                    cancellationToken);
-        }
-
-        return useS2iBuild;
     }
 
     private async Task<Route?> UpdateResourcesAsync(IOpenShiftClient client,
