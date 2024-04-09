@@ -4,7 +4,7 @@ An opinionated .NET cli tool for working with OpenShift.
 
 ## Usage
 
-Install .NET 6 or .NET 7 using the instructions at https://learn.microsoft.com/en-us/dotnet/core/install/.
+Install .NET 8 using the instructions at https://learn.microsoft.com/en-us/dotnet/core/install/.
 
 Install the tool:
 
