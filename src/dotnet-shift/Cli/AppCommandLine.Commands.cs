@@ -230,7 +230,7 @@ partial class AppCommandLine
 
     private CliCommand CreateDeleteCommand()
     {
-        var command = CreateCommand("delete", "Delete an application");
+        var command = CreateCommand("delete", "Delete a component");
 
         command.Add(Options.ContextOption);
         command.Add(Options.ForceOption);
