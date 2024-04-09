@@ -80,11 +80,11 @@ namespace OpenShift
 
                     if (receiveResult.Count > 0)
                     {
-                        if (currentReadType == WebSocketReadType.StandardOutput && !stdoutBuffer.HasValue)
+                        if (currentReadType == WebSocketReadType.StandardOutput && stdoutBuffer.HasValue)
                         {
                             return new ProcessReadResult(ProcessReadType.StandardOutput, receiveResult.Count);
                         }
-                        else if (currentReadType == WebSocketReadType.StandardError && !stderrBuffer.HasValue)
+                        else if (currentReadType == WebSocketReadType.StandardError && stderrBuffer.HasValue)
                         {
                             return new ProcessReadResult(ProcessReadType.StandardError, receiveResult.Count);
                         }
